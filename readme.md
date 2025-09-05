@@ -31,18 +31,25 @@ spline-runtime-pro/
 ├── scenes/                       # Individual scene files
 │   ├── hero-animation/
 │   │   └── scene.splinecode      # Hero scene
-│   ├── product-showcase-1/
-│   │   └── scene.splinecode      # Product demo
-│   ├── product-showcase-2/
-│   │   └── scene.splinecode      # Product demo
+│   ├── 1000SKISALLMOUNTAIN/
+│   │   └── scene.splinecode      # All-Mountain ski product
+│   ├── 1000SKISPOWDER/
+│   │   └── scene.splinecode      # Powder ski product
+│   ├── 1000SKSCARVE/
+│   │   └── scene.splinecode      # Carve ski product
+│   ├── 1000SKISPARK/
+│   │   └── scene.splinecode      # Park ski product
 │   ├── about-visual/
 │   │   └── scene.splinecode      # About page scene
-│   ├── collab-project-1/
-│   │   ├── scene.splinecode      # Custom project
-│   │   └── unique-texture-1.jpg  # Project-specific material
-│   └── collab-project-2/
-│       ├── scene.splinecode      # Custom project
-│       └── unique-texture-2.jpg  # Project-specific material
+│   ├── collab-1000_CHIMI_Gogles/
+│   │   ├── scene.splinecode      # CHIMI goggles collaboration
+│   │   └── unique-texture.jpg    # Project-specific material
+│   ├── collab-1000_CHIMI_SHADES/
+│   │   ├── scene.splinecode      # CHIMI shades collaboration
+│   │   └── unique-texture.jpg    # Project-specific material
+│   └── collab-1000_KANG/
+│       ├── scene.splinecode      # KANG collaboration
+│       └── unique-texture.jpg    # Project-specific material
 └── deployment/
     └── webflow-integration.html  # Code snippets for Webflow
 ```
@@ -58,7 +65,7 @@ mkdir spline-runtime-pro
 cd spline-runtime-pro
 
 # Create folder structure
-mkdir -p shared-textures scenes/hero-animation scenes/product-showcase-1 scenes/product-showcase-2 scenes/about-visual scenes/collab-project-1 scenes/collab-project-2 deployment
+mkdir -p shared-textures scenes/hero-animation scenes/1000SKISALLMOUNTAIN scenes/1000SKISPOWDER scenes/1000SKSCARVE scenes/1000SKISPARK scenes/about-visual scenes/collab-1000_CHIMI_Gogles scenes/collab-1000_CHIMI_SHADES scenes/collab-1000_KANG deployment
 
 # Copy this README
 curl -o README.md https://raw.githubusercontent.com/yourusername/spline-runtime-pro/main/README.md
@@ -76,7 +83,10 @@ cp /path/to/textures/*.jpg shared-textures/
 
 # Copy scene files to their respective folders
 cp /path/to/hero/scene.splinecode scenes/hero-animation/
-cp /path/to/product1/scene.splinecode scenes/product-showcase-1/
+cp /path/to/allmountain/scene.splinecode scenes/1000SKISALLMOUNTAIN/
+cp /path/to/powder/scene.splinecode scenes/1000SKISPOWDER/
+cp /path/to/carve/scene.splinecode scenes/1000SKSCARVE/
+cp /path/to/park/scene.splinecode scenes/1000SKISPARK/
 # ... repeat for all scenes
 ```
 
@@ -260,16 +270,38 @@ document.addEventListener("DOMContentLoaded", async function () {
 <!-- Secondary scenes - smart pause/resume -->
 <canvas 
     id="features-scene" 
-    data-spline-scene="product-showcase-1"
+    data-spline-scene="1000SKISALLMOUNTAIN"
     style="width: 100%; height: 400px; margin-top: 2rem;">
 </canvas>
 ```
 
 #### Product Pages
 ```html
+<!-- All-Mountain Ski -->
 <canvas 
-    id="product-demo" 
-    data-spline-scene="product-showcase-1"
+    id="allmountain-demo" 
+    data-spline-scene="1000SKISALLMOUNTAIN"
+    style="width: 100%; height: 500px;">
+</canvas>
+
+<!-- Powder Ski -->
+<canvas 
+    id="powder-demo" 
+    data-spline-scene="1000SKISPOWDER"
+    style="width: 100%; height: 500px;">
+</canvas>
+
+<!-- Carve Ski -->
+<canvas 
+    id="carve-demo" 
+    data-spline-scene="1000SKSCARVE"
+    style="width: 100%; height: 500px;">
+</canvas>
+
+<!-- Park Ski -->
+<canvas 
+    id="park-demo" 
+    data-spline-scene="1000SKISPARK"
     style="width: 100%; height: 500px;">
 </canvas>
 ```
@@ -285,9 +317,24 @@ document.addEventListener("DOMContentLoaded", async function () {
 
 #### Collaboration Projects
 ```html
+<!-- CHIMI Goggles Collaboration -->
 <canvas 
-    id="collab-demo-1" 
-    data-spline-scene="collab-project-1"
+    id="chimi-goggles" 
+    data-spline-scene="collab-1000_CHIMI_Gogles"
+    style="width: 100%; height: 450px;">
+</canvas>
+
+<!-- CHIMI Shades Collaboration -->
+<canvas 
+    id="chimi-shades" 
+    data-spline-scene="collab-1000_CHIMI_SHADES"
+    style="width: 100%; height: 450px;">
+</canvas>
+
+<!-- KANG Collaboration -->
+<canvas 
+    id="kang-collab" 
+    data-spline-scene="collab-1000_KANG"
     style="width: 100%; height: 450px;">
 </canvas>
 ```
