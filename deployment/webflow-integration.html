@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Webflow Integration - Spline Runtime Pro</title>
+</head>
+<body>
+    <h1>Webflow Integration Code Snippets</h1>
+    
+    <h2>1. Global Site Footer Code</h2>
+    <p>Add this to Site Settings → Custom Code → Footer Code in Webflow</p>
+    <pre>Copy the script from README.md lines 108-245</pre>
+    
+    <h2>2. Canvas Element Examples</h2>
+    
+    <h3>Hero Scene (Priority)</h3>
+    <pre><code>&lt;canvas 
+    id="hero-scene" 
+    data-spline-scene="hero-animation"
+    data-priority="true"
+    style="width: 100%; height: 600px; border-radius: 8px;"&gt;
+&lt;/canvas&gt;</code></pre>
+    
+    <h3>Standard Scene</h3>
+    <pre><code>&lt;canvas 
+    id="product-demo" 
+    data-spline-scene="product-showcase-1"
+    style="width: 100%; height: 500px;"&gt;
+&lt;/canvas&gt;</code></pre>
+    
+    <h3>Collaboration Project Scene</h3>
+    <pre><code>&lt;canvas 
+    id="collab-demo-1" 
+    data-spline-scene="collab-project-1"
+    style="width: 100%; height: 450px;"&gt;
+&lt;/canvas&gt;</code></pre>
+    
+    <h2>3. Testing Commands</h2>
+    <pre><code>// Check active scene count
+window.splineControls.getActiveCount()
+
+// Manually pause all scenes
+window.splineControls.pauseAll()
+
+// Resume all scenes
+window.splineControls.resumeAll()</code></pre>
+    
+    <h2>Important Notes:</h2>
+    <ul>
+        <li>Update CLOUDFLARE_URL in the script to your deployed URL</li>
+        <li>Canvas IDs must be unique across the page</li>
+        <li>data-spline-scene must match folder names in scenes/</li>
+        <li>Use data-priority="true" for critical scenes that should never pause</li>
+        <li>Desktop: Max 4 active scenes | Mobile: Max 2 active scenes</li>
+    </ul>
+</body>
+</html>
