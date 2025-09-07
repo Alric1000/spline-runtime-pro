@@ -1,58 +1,144 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Webflow Integration - Spline Runtime Pro</title>
-</head>
-<body>
-    <h1>Webflow Integration Code Snippets</h1>
-    
-    <h2>1. Global Site Footer Code</h2>
-    <p>Add this to Site Settings → Custom Code → Footer Code in Webflow</p>
-    <pre>Copy the script from README.md lines 108-245</pre>
-    
-    <h2>2. Canvas Element Examples</h2>
-    
-    <h3>Hero Scene (Priority)</h3>
-    <pre><code>&lt;canvas 
-    id="hero-scene" 
-    data-spline-scene="hero-animation"
-    data-priority="true"
-    style="width: 100%; height: 600px; border-radius: 8px;"&gt;
-&lt;/canvas&gt;</code></pre>
-    
-    <h3>Standard Scene</h3>
-    <pre><code>&lt;canvas 
-    id="product-demo" 
-    data-spline-scene="product-showcase-1"
-    style="width: 100%; height: 500px;"&gt;
-&lt;/canvas&gt;</code></pre>
-    
-    <h3>Collaboration Project Scene</h3>
-    <pre><code>&lt;canvas 
-    id="collab-demo-1" 
-    data-spline-scene="collab-project-1"
-    style="width: 100%; height: 450px;"&gt;
-&lt;/canvas&gt;</code></pre>
-    
-    <h2>3. Testing Commands</h2>
-    <pre><code>// Check active scene count
-window.splineControls.getActiveCount()
+<!-- 
+WEBFLOW INTEGRATION SCRIPT FOR SPLINE RUNTIME PRO
+Copy this entire code block and paste into:
+Webflow → Project Settings → Custom Code → Footer Code
+-->
 
-// Manually pause all scenes
-window.splineControls.pauseAll()
-
-// Resume all scenes
-window.splineControls.resumeAll()</code></pre>
+<script>
+document.addEventListener("DOMContentLoaded", async function () {
+    const CLOUDFLARE_URL = 'https://spline-runtime-pro.pages.dev'; // ✅ Your live Cloudflare URL
     
-    <h2>Important Notes:</h2>
-    <ul>
-        <li>Update CLOUDFLARE_URL in the script to your deployed URL</li>
-        <li>Canvas IDs must be unique across the page</li>
-        <li>data-spline-scene must match folder names in scenes/</li>
-        <li>Use data-priority="true" for critical scenes that should never pause</li>
-        <li>Desktop: Max 4 active scenes | Mobile: Max 2 active scenes</li>
-    </ul>
-</body>
-</html>
+    // Global runtime cache - loads once for ENTIRE website
+    if (!window.splineRuntime) {
+        console.log('Loading Spline runtime (one time only)...');
+        window.splineRuntime = import(`${CLOUDFLARE_URL}/runtime.js`);
+    }
+    
+    const activeScenes = new Map(); // Track loaded scenes and their app instances
+    const loadedScenes = new Set(); // Track which scenes have been loaded
+    
+    // Device detection for performance optimization
+    const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+    const maxActiveScenes = isMobile ? 2 : 4; // Limit active scenes based on device
+    let currentActiveCount = 0;
+    
+    // Scene management functions
+    function pauseScene(canvasId) {
+        const app = activeScenes.get(canvasId);
+        if (app && typeof app.pause === 'function') {
+            app.pause();
+            console.log(`Paused scene: ${canvasId}`);
+        }
+    }
+    
+    function resumeScene(canvasId) {
+        const app = activeScenes.get(canvasId);
+        if (app && typeof app.resume === 'function') {
+            app.resume();
+            console.log(`Resumed scene: ${canvasId}`);
+        }
+    }
+    
+    function pauseLeastImportantScene() {
+        // Find a scene to pause (skip hero scenes marked as priority)
+        for (let [canvasId, app] of activeScenes) {
+            const canvas = document.getElementById(canvasId);
+            const isPriority = canvas && canvas.hasAttribute('data-priority');
+            if (!isPriority) {
+                pauseScene(canvasId);
+                currentActiveCount--;
+                return true;
+            }
+        }
+        return false;
+    }
+    
+    async function loadSplineScene(canvasId, scenePath) {
+        if (loadedScenes.has(canvasId)) {
+            // Scene already loaded, just resume it
+            resumeScene(canvasId);
+            return;
+        }
+        
+        const canvas = document.getElementById(canvasId);
+        if (!canvas) return;
+        
+        // Check if we need to pause a scene first
+        if (currentActiveCount >= maxActiveScenes) {
+            if (!pauseLeastImportantScene()) {
+                console.warn(`Max scenes (${maxActiveScenes}) already active, skipping load of ${canvasId}`);
+                return;
+            }
+        }
+        
+        try {
+            console.log(`Loading scene: ${scenePath} (${currentActiveCount + 1}/${maxActiveScenes})`);
+            const { Application } = await window.splineRuntime;
+            const app = new Application(canvas, {
+                wasmPath: `${CLOUDFLARE_URL}/`
+            });
+            
+            await app.load(`${CLOUDFLARE_URL}/scenes/${scenePath}/scene.splinecode`);
+            
+            // Store the app instance for pause/resume control
+            activeScenes.set(canvasId, app);
+            loadedScenes.add(canvasId);
+            currentActiveCount++;
+            
+            console.log(`Scene loaded: ${scenePath} (Active: ${currentActiveCount}/${maxActiveScenes})`);
+        } catch (error) {
+            console.error(`Failed to load ${scenePath}:`, error);
+        }
+    }
+    
+    function setupSmartLoading(canvasId, scenePath) {
+        const canvas = document.getElementById(canvasId);
+        if (!canvas) return;
+        
+        const observer = new IntersectionObserver((entries) => {
+            if (entries[0].isIntersecting) {
+                // Scene entered viewport - load or resume
+                if (!loadedScenes.has(canvasId)) {
+                    loadSplineScene(canvasId, scenePath);
+                } else {
+                    resumeScene(canvasId);
+                    currentActiveCount++;
+                }
+            } else {
+                // Scene left viewport - pause to save performance
+                if (activeScenes.has(canvasId)) {
+                    pauseScene(canvasId);
+                    currentActiveCount--;
+                }
+            }
+        }, { 
+            rootMargin: '100px', // Start loading before fully visible
+            threshold: 0.1 // Trigger when 10% visible
+        });
+        
+        observer.observe(canvas);
+    }
+    
+    // Auto-detect and setup scenes on current page
+    document.querySelectorAll('[data-spline-scene]').forEach(canvas => {
+        const scenePath = canvas.getAttribute('data-spline-scene');
+        setupSmartLoading(canvas.id, scenePath);
+    });
+    
+    const sceneCount = document.querySelectorAll('[data-spline-scene]').length;
+    console.log(`Found ${sceneCount} Spline scenes on this page (Device: ${isMobile ? 'Mobile' : 'Desktop'}, Max Active: ${maxActiveScenes})`);
+    
+    // Optional: Add global pause/resume controls
+    window.splineControls = {
+        pauseAll: () => {
+            activeScenes.forEach((app, canvasId) => pauseScene(canvasId));
+            currentActiveCount = 0;
+        },
+        resumeAll: () => {
+            activeScenes.forEach((app, canvasId) => resumeScene(canvasId));
+            currentActiveCount = activeScenes.size;
+        },
+        getActiveCount: () => currentActiveCount
+    };
+});
+</script>
