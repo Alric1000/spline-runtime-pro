@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pixel Ratio Debug Test</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            font-family: monospace;
+            background: #1a1a1a;
+            color: #fff;
+        }
+        #debug {
+            position: fixed;
+            top: 10px;
+            right: 10px;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 15px;
+            border-radius: 5px;
+            z-index: 1000;
+            max-width: 400px;
+        }
+        #canvas3d {
+            width: 100%;
+            height: 600px;
+            border: 2px solid #00ff00;
+        }
+        .info { color: #00ff00; }
+        .warn { color: #ffff00; }
+        .error { color: #ff0000; }
+    </style>
+</head>
+<body>
+    <div id="debug">
+        <h3>Pixel Ratio Debug</h3>
+        <div id="log"></div>
+    </div>
+
+    <h1>Spline Scene Test</h1>
+    <canvas id="canvas3d"></canvas>
+
+    <script type="module">
+        const log = (msg, type = 'info') => {
+            const el = document.createElement('div');
+            el.className = type;
+            el.textContent = msg;
+            document.getElementById('log').appendChild(el);
+            console.log(msg);
+        };
+
+        log(`Device Pixel Ratio: ${window.devicePixelRatio}`);
+        log(`Screen Resolution: ${screen.width}x${screen.height}`);
+
+        // Load your runtime
+        const CLOUDFLARE_URL = 'https://spline-runtime-pro.pages.dev';
+
+        try {
+            log('Loading runtime...');
+            const runtime = await import(`${CLOUDFLARE_URL}/runtime.js`);
+            log('Runtime loaded successfully');
+
+            // Check what's in the runtime
+            log(`Runtime exports: ${Object.keys(runtime).join(', ')}`);
+
+            const canvas = document.getElementById('canvas3d');
+            const rect = canvas.getBoundingClientRect();
+            log(`Canvas size: ${rect.width}x${rect.height}`);
+
+            // Try to create application
+            const { Application } = runtime;
+            log('Creating Application...');
+
+            const app = new Application(canvas, {
+                wasmPath: `${CLOUDFLARE_URL}/`,
+                pixelRatio: window.devicePixelRatio || 1,
+                antialias: true
+            });
+
+            log('Application created');
+
+            // Load a scene
+            log('Loading scene...');
+            await app.load(`${CLOUDFLARE_URL}/scenes/1000SKISALLMOUNTAIN/scene.splinecode`);
+            log('Scene loaded');
+
+            // Check renderer after load
+            setTimeout(() => {
+                // Try to find the renderer
+                const findRenderer = () => {
+                    const paths = [
+                        app._scene?._renderer,
+                        app.renderer,
+                        app._renderer,
+                        app.scene?.renderer,
+                        app._spline?._scene?._renderer
+                    ];
+
+                    for (const path of paths) {
+                        if (path) {
+                            log(`Found renderer at: ${paths.indexOf(path)}`, 'info');
+                            return path;
+                        }
+                    }
+                    return null;
+                };
+
+                const renderer = findRenderer();
+
+                if (renderer) {
+                    // Check current pixel ratio
+                    if (renderer.getPixelRatio) {
+                        const currentRatio = renderer.getPixelRatio();
+                        log(`Current renderer pixel ratio: ${currentRatio}`, currentRatio === window.devicePixelRatio ? 'info' : 'warn');
+                    }
+
+                    // Try to force it
+                    if (renderer.setPixelRatio) {
+                        renderer.setPixelRatio(window.devicePixelRatio);
+                        log(`Forced pixel ratio to: ${window.devicePixelRatio}`);
+
+                        // Check again
+                        if (renderer.getPixelRatio) {
+                            const newRatio = renderer.getPixelRatio();
+                            log(`New pixel ratio: ${newRatio}`, newRatio === window.devicePixelRatio ? 'info' : 'error');
+                        }
+                    }
+
+                    // Check canvas actual size
+                    log(`Canvas actual dimensions: ${canvas.width}x${canvas.height}`);
+                    log(`Canvas should be: ${rect.width * window.devicePixelRatio}x${rect.height * window.devicePixelRatio}`);
+
+                    if (canvas.width !== rect.width * window.devicePixelRatio) {
+                        log('Canvas size mismatch - fixing...', 'warn');
+                        canvas.width = rect.width * window.devicePixelRatio;
+                        canvas.height = rect.height * window.devicePixelRatio;
+                        renderer.setSize(rect.width, rect.height, false);
+                    }
+                } else {
+                    log('Could not find renderer!', 'error');
+                    log('App structure:', 'warn');
+                    console.log(app);
+                }
+
+                // Also check for THREE
+                if (window.THREE) {
+                    log(`THREE.js version: ${window.THREE.REVISION}`);
+                } else {
+                    log('THREE not found in global scope', 'warn');
+                }
+
+            }, 1000);
+
+        } catch (error) {
+            log(`Error: ${error.message}`, 'error');
+            console.error(error);
+        }
+    </script>
+</body>
+</html>
