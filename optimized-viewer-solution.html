@@ -1,0 +1,151 @@
+<!-- OPTIMIZED SOLUTION: Load Spline Viewer ONCE, Use Multiple Times -->
+
+<style>
+  /* Custom Spline viewers styling */
+  .spline-canvas {
+    width: 100%;
+    height: 100%;
+    display: block;
+  }
+
+  spline-viewer {
+    width: 100%;
+    height: 100%;
+    display: block;
+  }
+</style>
+
+<!-- Load Spline Viewer ONCE in page head -->
+<script type="module" src="https://unpkg.com/@splinetool/viewer@1.10.57/build/spline-viewer.js"></script>
+
+<script>
+document.addEventListener("DOMContentLoaded", async function() {
+    const CLOUDFLARE_URL = 'https://spline-runtime-pro.pages.dev';
+
+    // Performance metrics
+    const metrics = {
+        viewerLoadTime: 0,
+        scenesLoaded: 0,
+        totalLoadTime: 0
+    };
+
+    const startTime = performance.now();
+
+    // Wait for Spline viewer to be defined (loads once!)
+    async function waitForViewer() {
+        while (!customElements.get('spline-viewer')) {
+            await new Promise(resolve => setTimeout(resolve, 50));
+        }
+        metrics.viewerLoadTime = performance.now() - startTime;
+        console.log(`✅ Spline viewer loaded in ${metrics.viewerLoadTime.toFixed(0)}ms (shared for all scenes)`);
+    }
+
+    // Convert canvas to spline-viewer element
+    function upgradeToViewer(canvas) {
+        const scenePath = canvas.getAttribute('data-spline-scene');
+        if (!scenePath) return;
+
+        const sceneStart = performance.now();
+
+        // Create spline-viewer element
+        const viewer = document.createElement('spline-viewer');
+        viewer.setAttribute('url', `${CLOUDFLARE_URL}/scenes/${scenePath}/scene.splinecode`);
+        viewer.setAttribute('id', canvas.id);
+        viewer.className = canvas.className;
+
+        // Copy any data attributes
+        Array.from(canvas.attributes).forEach(attr => {
+            if (attr.name.startsWith('data-')) {
+                viewer.setAttribute(attr.name, attr.value);
+            }
+        });
+
+        // Replace canvas with viewer
+        canvas.parentElement.replaceChild(viewer, canvas);
+
+        // Track loading
+        viewer.addEventListener('load-start', () => {
+            console.log(`⏳ Loading scene: ${scenePath}`);
+        });
+
+        viewer.addEventListener('load', () => {
+            const loadTime = performance.now() - sceneStart;
+            metrics.scenesLoaded++;
+            console.log(`✅ Scene loaded: ${scenePath} (${loadTime.toFixed(0)}ms)`);
+        });
+
+        return viewer;
+    }
+
+    // Smart loading with intersection observer
+    function setupSmartLoading() {
+        const canvases = document.querySelectorAll('[data-spline-scene]');
+        const viewers = new Map();
+
+        // Device-based limits
+        const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+        const maxConcurrent = isMobile ? 2 : 4;
+        let activeCount = 0;
+
+        canvases.forEach(canvas => {
+            const observer = new IntersectionObserver((entries) => {
+                if (entries[0].isIntersecting) {
+                    if (!viewers.has(canvas.id)) {
+                        // First time viewing - upgrade to viewer
+                        if (activeCount < maxConcurrent) {
+                            const viewer = upgradeToViewer(canvas);
+                            viewers.set(canvas.id, viewer);
+                            activeCount++;
+                        }
+                    } else {
+                        // Already loaded - just ensure it's active
+                        const viewer = viewers.get(canvas.id);
+                        if (viewer && viewer.resume) viewer.resume();
+                    }
+                } else {
+                    // Out of view - pause if possible
+                    const viewer = viewers.get(canvas.id);
+                    if (viewer && viewer.pause) viewer.pause();
+                }
+            }, {
+                rootMargin: '100px',
+                threshold: 0.1
+            });
+
+            observer.observe(canvas);
+        });
+
+        console.log(`🎯 Smart loading configured for ${canvases.length} scenes (max ${maxConcurrent} concurrent)`);
+    }
+
+    // Initialize
+    await waitForViewer();
+    setupSmartLoading();
+
+    // Performance report
+    metrics.totalLoadTime = performance.now() - startTime;
+    console.log('📊 Performance Report:', metrics);
+
+    // Global controls
+    window.splineMetrics = {
+        getMetrics: () => metrics,
+        getViewerSize: () => {
+            // Check size of loaded viewer library
+            if (window.performance && window.performance.memory) {
+                return {
+                    usedJSHeapSize: (window.performance.memory.usedJSHeapSize / 1048576).toFixed(2) + ' MB',
+                    totalJSHeapSize: (window.performance.memory.totalJSHeapSize / 1048576).toFixed(2) + ' MB'
+                };
+            }
+            return 'Memory API not available';
+        }
+    };
+});
+</script>
+
+<!-- HTML Structure remains the same -->
+<!-- Your existing canvas elements with data-spline-scene attributes -->
+<canvas id="allmountain-showcase" data-spline-scene="1000SKISALLMOUNTAIN"></canvas>
+<canvas id="park-showcase" data-spline-scene="1000SKISPARK"></canvas>
+<canvas id="carve-showcase" data-spline-scene="1000SKISCARVE"></canvas>
+<canvas id="powder-showcase" data-spline-scene="1000SKISPOWDER"></canvas>
