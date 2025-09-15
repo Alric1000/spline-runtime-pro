@@ -8234,4 +8234,126 @@ onmessage = function(messageEvent) {
     };
     
     console.log('[Spline Runtime] Pixel ratio enhancement active');
+
+    // More aggressive Application patching
+    let patchAttempts = 0;
+    const maxAttempts = 100;
+
+    const patchApplication = () => {
+        patchAttempts++;
+
+        // Try to find Application in various places
+        const App = window.Application ||
+                   window.SPLINE?.Application ||
+                   window.SplineRuntime?.Application ||
+                   window.runtime?.Application;
+
+        if (App && !App.__patched) {
+            console.log('[Spline Runtime] Found Application, patching now...');
+
+            const OriginalApp = App;
+
+            // Create wrapper
+            const PatchedApp = function(canvas, options = {}) {
+                console.log('[Spline Runtime] Creating patched Application');
+
+                const app = new OriginalApp(canvas, options);
+                const dpr = window.devicePixelRatio || 1;
+
+                // Patch multiple times to ensure it sticks
+                const forcePixelRatio = () => {
+                    // Try multiple paths to renderer
+                    const renderer = app._scene?._renderer ||
+                                   app.renderer ||
+                                   app._renderer ||
+                                   app.scene?.renderer;
+
+                    if (renderer && renderer.setPixelRatio) {
+                        renderer.setPixelRatio(dpr);
+
+                        // Also try to set various properties
+                        if (renderer.getPixelRatio && renderer.getPixelRatio() !== dpr) {
+                            console.warn('[Spline Runtime] Pixel ratio mismatch, forcing again');
+                            renderer.setPixelRatio(dpr);
+                        }
+
+                        // Update canvas size
+                        const rect = canvas.getBoundingClientRect();
+                        canvas.width = rect.width * dpr;
+                        canvas.height = rect.height * dpr;
+                        canvas.style.width = rect.width + 'px';
+                        canvas.style.height = rect.height + 'px';
+
+                        renderer.setSize(rect.width, rect.height, false);
+
+                        console.log('[Spline Runtime] Set pixel ratio to', dpr, 'on renderer');
+                        return true;
+                    }
+                    return false;
+                };
+
+                // Try immediately
+                setTimeout(forcePixelRatio, 0);
+                setTimeout(forcePixelRatio, 50);
+                setTimeout(forcePixelRatio, 100);
+                setTimeout(forcePixelRatio, 500);
+
+                // Patch load method
+                const originalLoad = app.load;
+                app.load = async function(...args) {
+                    const result = await originalLoad.apply(this, args);
+
+                    // Force pixel ratio after load
+                    forcePixelRatio();
+                    setTimeout(forcePixelRatio, 100);
+                    setTimeout(forcePixelRatio, 500);
+
+                    return result;
+                };
+
+                // Patch any setSize method
+                if (app.setSize) {
+                    const originalSetSize = app.setSize;
+                    app.setSize = function(...args) {
+                        const result = originalSetSize.apply(this, args);
+                        forcePixelRatio();
+                        return result;
+                    };
+                }
+
+                return app;
+            };
+
+            PatchedApp.__patched = true;
+
+            // Replace everywhere possible
+            if (window.Application === App) window.Application = PatchedApp;
+            if (window.SPLINE?.Application === App) window.SPLINE.Application = PatchedApp;
+            if (window.SplineRuntime?.Application === App) window.SplineRuntime.Application = PatchedApp;
+            if (window.runtime?.Application === App) window.runtime.Application = PatchedApp;
+
+            console.log('[Spline Runtime] Application patched successfully');
+            return true;
+        }
+
+        // Keep trying
+        if (patchAttempts < maxAttempts) {
+            setTimeout(patchApplication, 100);
+        }
+
+        return false;
+    };
+
+    // Start patching attempts
+    patchApplication();
+
+    // Also monitor for dynamic module loading
+    if (window.splineRuntime) {
+        window.splineRuntime.then(module => {
+            if (module.Application && !module.Application.__patched) {
+                console.log('[Spline Runtime] Patching dynamically loaded Application');
+                patchApplication();
+            }
+        });
+    }
 })();

@@ -75,8 +75,19 @@ document.addEventListener("DOMContentLoaded", async function () {
             console.log(`Loading scene: ${scenePath} (${currentActiveCount + 1}/${maxActiveScenes})`);
             const { Application } = await window.splineRuntime;
             const app = new Application(canvas, {
-                wasmPath: `${CLOUDFLARE_URL}/`
+                wasmPath: `${CLOUDFLARE_URL}/`,
+                pixelRatio: window.devicePixelRatio || 1,
+                antialias: true
             });
+
+            // Force pixel ratio after creation
+            setTimeout(() => {
+                if (app._scene && app._scene._renderer) {
+                    const dpr = window.devicePixelRatio || 1;
+                    app._scene._renderer.setPixelRatio(dpr);
+                    console.log(`Forced pixel ratio: ${dpr} for ${scenePath}`);
+                }
+            }, 100);
             
             await app.load(`${CLOUDFLARE_URL}/scenes/${scenePath}/scene.splinecode`);
             
