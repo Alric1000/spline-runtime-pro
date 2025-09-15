@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Spline Viewer</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            overflow: hidden;
+            background: transparent;
+        }
+        spline-viewer {
+            width: 100vw;
+            height: 100vh;
+            display: block;
+        }
+        .loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-family: system-ui, -apple-system, sans-serif;
+            color: #666;
+        }
+    </style>
+    <script type="module" src="https://unpkg.com/@splinetool/viewer@1.10.57/build/spline-viewer.js"></script>
+</head>
+<body>
+    <div class="loading" id="loading">Loading...</div>
+    <spline-viewer id="viewer"></spline-viewer>
+    <script>
+        // Get scene from URL parameter
+        const params = new URLSearchParams(window.location.search);
+        const scene = params.get('scene');
+        const baseUrl = window.location.origin;
+
+        if (scene) {
+            const viewer = document.getElementById('viewer');
+            const sceneUrl = `${baseUrl}/scenes/${scene}/scene.splinecode`;
+
+            viewer.setAttribute('url', sceneUrl);
+
+            // Hide loading text when scene loads
+            viewer.addEventListener('load', () => {
+                document.getElementById('loading').style.display = 'none';
+            });
+
+            console.log('Loading scene:', scene);
+            console.log('Scene URL:', sceneUrl);
+        } else {
+            document.getElementById('loading').textContent = 'No scene specified';
+        }
+    </script>
+</body>
+</html>
