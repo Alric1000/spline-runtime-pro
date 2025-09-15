@@ -8357,3 +8357,4 @@ onmessage = function(messageEvent) {
         });
     }
 })();
+window.SPLINE_RUNTIME_VERSION = "1.0.1-pixelfix";
