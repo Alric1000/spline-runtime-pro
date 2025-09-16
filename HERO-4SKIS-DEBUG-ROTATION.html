@@ -1,0 +1,352 @@
+<!-- HERO 4-SKIS DEBUG ROTATION - Diagnose rotation issue -->
+
+<script async src="https://cdn.jsdelivr.net/npm/@finsweet/cookie-consent@1/fs-cc.js" fs-cc-mode="opt-in"></script>
+
+<script>
+(function() {
+    const CLOUDFLARE_URL = 'https://spline-runtime-pro.pages.dev';
+    const HERO_SCENE = 'hero-animation';
+
+    let viewer = null;
+    let splineApp = null;
+    let skiObjects = [];
+
+    const SKI_OBJECT_NAMES = [
+        'normalmap test 4 bake test 300x4000 MCP',
+        'normalmap test 4 bake test 300x4000 MCP 2',
+        'normalmap test 4 bake test 300x4000 MCP 3',
+        'normalmap test 4 bake test 300x4000 MCP 4'
+    ];
+
+    const SKI_LABELS = ['ALLMOUNTAIN', 'PARK', 'CARVE', 'POWDER'];
+
+    // Wait for viewer
+    function waitForSplineViewer() {
+        return new Promise((resolve) => {
+            const check = setInterval(() => {
+                if (customElements.get('spline-viewer')) {
+                    clearInterval(check);
+                    resolve();
+                }
+            }, 50);
+        });
+    }
+
+    // Create viewer
+    function createViewer(container) {
+        viewer = document.createElement('spline-viewer');
+        viewer.setAttribute('url', `${CLOUDFLARE_URL}/scenes/${HERO_SCENE}/scene.splinecode`);
+        viewer.setAttribute('id', 'hero-viewer');
+        viewer.style.width = '100%';
+        viewer.style.height = '100%';
+        viewer.style.display = 'block';
+
+        container.appendChild(viewer);
+
+        // Check for _spline
+        const interval = setInterval(() => {
+            if (viewer._spline) {
+                splineApp = viewer._spline;
+                window.splineApp = splineApp;
+                clearInterval(interval);
+
+                console.log('[DEBUG] Spline connected');
+
+                setTimeout(() => {
+                    findSkiObjects();
+                }, 1000);
+            }
+        }, 100);
+
+        setTimeout(() => clearInterval(interval), 10000);
+    }
+
+    // Find objects
+    function findSkiObjects() {
+        if (!splineApp?.getAllObjects) return;
+
+        const allObjects = splineApp.getAllObjects();
+
+        for (let i = 0; i < SKI_OBJECT_NAMES.length; i++) {
+            const obj = allObjects.find(o => o.name === SKI_OBJECT_NAMES[i]);
+            if (obj) {
+                skiObjects[i] = obj;
+                console.log(`[DEBUG] Found ${SKI_LABELS[i]}`);
+            }
+        }
+
+        console.log(`[DEBUG] Found ${skiObjects.filter(Boolean).length}/4 objects`);
+    }
+
+    // Initialize
+    async function initialize() {
+        await waitForSplineViewer();
+
+        const container = document.querySelector('.spline-container, .hero-container, #hero-container');
+        if (!container) {
+            console.error('[DEBUG] No container');
+            return;
+        }
+
+        createViewer(container);
+    }
+
+    // Start
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initialize);
+    } else {
+        setTimeout(initialize, 100);
+    }
+
+    // Debug API
+    window.debug = {
+        // Inspect ski object structure
+        inspect: (index = 0) => {
+            const obj = skiObjects[index];
+            if (!obj) {
+                console.error('[DEBUG] No object at index', index);
+                return;
+            }
+
+            console.log(`[DEBUG] === ${SKI_LABELS[index]} OBJECT STRUCTURE ===`);
+            console.log('Object:', obj);
+            console.log('Type:', obj.constructor.name);
+
+            // Check rotation property
+            console.log('\n=== ROTATION ===');
+            console.log('rotation:', obj.rotation);
+            if (obj.rotation) {
+                console.log('  rotation.x:', obj.rotation.x);
+                console.log('  rotation.y:', obj.rotation.y);
+                console.log('  rotation.z:', obj.rotation.z);
+                console.log('  rotation._x:', obj.rotation._x);
+                console.log('  rotation._y:', obj.rotation._y);
+                console.log('  rotation._z:', obj.rotation._z);
+                console.log('  rotation type:', obj.rotation.constructor.name);
+            }
+
+            // Check for transform/matrix
+            console.log('\n=== TRANSFORM/MATRIX ===');
+            console.log('transform:', obj.transform);
+            console.log('matrix:', obj.matrix);
+            console.log('matrixWorld:', obj.matrixWorld);
+            console.log('quaternion:', obj.quaternion);
+
+            // Check for update methods
+            console.log('\n=== UPDATE METHODS ===');
+            const methods = Object.getOwnPropertyNames(Object.getPrototypeOf(obj))
+                .filter(m => typeof obj[m] === 'function');
+
+            const updateMethods = methods.filter(m =>
+                m.includes('update') ||
+                m.includes('Update') ||
+                m.includes('render') ||
+                m.includes('rotate') ||
+                m.includes('Rotate')
+            );
+
+            console.log('Update-related methods:', updateMethods);
+
+            // Check all methods
+            console.log('\n=== ALL METHODS ===');
+            console.log('All methods:', methods);
+
+            return obj;
+        },
+
+        // Try different rotation methods
+        testRotation: (index = 0, degrees = 45) => {
+            const obj = skiObjects[index];
+            if (!obj) {
+                console.error('[DEBUG] No object at index', index);
+                return;
+            }
+
+            const radians = degrees * (Math.PI / 180);
+            console.log(`\n[DEBUG] Testing rotation methods for ${SKI_LABELS[index]}:`);
+            console.log(`Target: ${degrees}° (${radians} rad)`);
+
+            // Store original
+            const original = obj.rotation?._y || obj.rotation?.y || 0;
+            console.log(`Original rotation: ${original}`);
+
+            // Method 1: Direct _y
+            console.log('\n1. Testing rotation._y:');
+            if (obj.rotation && obj.rotation._y !== undefined) {
+                const before = obj.rotation._y;
+                obj.rotation._y = radians;
+                const after = obj.rotation._y;
+                console.log(`  Before: ${before}, After: ${after}`);
+                console.log(`  Success: ${after === radians}`);
+            } else {
+                console.log('  Property not found');
+            }
+
+            // Method 2: Direct y
+            console.log('\n2. Testing rotation.y:');
+            if (obj.rotation && obj.rotation.y !== undefined) {
+                const before = obj.rotation.y;
+                obj.rotation.y = radians;
+                const after = obj.rotation.y;
+                console.log(`  Before: ${before}, After: ${after}`);
+                console.log(`  Success: ${after === radians}`);
+            } else {
+                console.log('  Property not found');
+            }
+
+            // Method 3: Set method
+            console.log('\n3. Testing rotation.set():');
+            if (obj.rotation?.set) {
+                obj.rotation.set(0, radians, 0);
+                console.log('  Called rotation.set(0, radians, 0)');
+                console.log(`  New _y: ${obj.rotation._y}, y: ${obj.rotation.y}`);
+            } else {
+                console.log('  Method not found');
+            }
+
+            // Method 4: rotateY
+            console.log('\n4. Testing rotateY():');
+            if (obj.rotateY) {
+                obj.rotateY(radians);
+                console.log('  Called rotateY(radians)');
+                console.log(`  New rotation: ${obj.rotation?._y || obj.rotation?.y}`);
+            } else {
+                console.log('  Method not found');
+            }
+
+            // Method 5: setRotationFromEuler
+            console.log('\n5. Testing setRotationFromEuler():');
+            if (obj.setRotationFromEuler && window.THREE) {
+                const euler = new THREE.Euler(0, radians, 0);
+                obj.setRotationFromEuler(euler);
+                console.log('  Called setRotationFromEuler');
+            } else {
+                console.log('  Method not found');
+            }
+
+            // Force updates
+            console.log('\n=== FORCING UPDATES ===');
+
+            // Update matrix
+            if (obj.updateMatrix) {
+                obj.updateMatrix();
+                console.log('  Called updateMatrix()');
+            }
+
+            if (obj.updateMatrixWorld) {
+                obj.updateMatrixWorld(true);
+                console.log('  Called updateMatrixWorld(true)');
+            }
+
+            // Update flags
+            if (obj.needsUpdate !== undefined) {
+                obj.needsUpdate = true;
+                console.log('  Set needsUpdate = true');
+            }
+
+            if (obj.matrixWorldNeedsUpdate !== undefined) {
+                obj.matrixWorldNeedsUpdate = true;
+                console.log('  Set matrixWorldNeedsUpdate = true');
+            }
+
+            // Render
+            console.log('\n=== RENDER CALLS ===');
+
+            if (splineApp.render) {
+                splineApp.render();
+                console.log('  Called splineApp.render()');
+            }
+
+            if (splineApp.requestRender) {
+                splineApp.requestRender();
+                console.log('  Called splineApp.requestRender()');
+            }
+
+            if (splineApp._renderer?.render) {
+                splineApp._renderer.render(splineApp._scene, splineApp._camera);
+                console.log('  Called renderer.render(scene, camera)');
+            }
+
+            // Check final value
+            console.log('\n=== FINAL CHECK ===');
+            console.log(`Final rotation._y: ${obj.rotation?._y}`);
+            console.log(`Final rotation.y: ${obj.rotation?.y}`);
+
+            // Visual check
+            setTimeout(() => {
+                console.log('\n=== AFTER 500ms ===');
+                console.log(`rotation._y: ${obj.rotation?._y}`);
+                console.log(`rotation.y: ${obj.rotation?.y}`);
+            }, 500);
+        },
+
+        // Check if rotation is being overridden
+        monitor: (index = 0) => {
+            const obj = skiObjects[index];
+            if (!obj) {
+                console.error('[DEBUG] No object');
+                return;
+            }
+
+            console.log(`[DEBUG] Monitoring ${SKI_LABELS[index]} rotation...`);
+
+            let lastY = obj.rotation?._y || obj.rotation?.y || 0;
+
+            const interval = setInterval(() => {
+                const currentY = obj.rotation?._y || obj.rotation?.y || 0;
+
+                if (currentY !== lastY) {
+                    console.log(`[DEBUG] Rotation changed: ${lastY} -> ${currentY}`);
+                    lastY = currentY;
+                }
+            }, 100);
+
+            // Stop after 5 seconds
+            setTimeout(() => {
+                clearInterval(interval);
+                console.log('[DEBUG] Monitoring stopped');
+            }, 5000);
+        },
+
+        // List all Spline app properties
+        spline: () => {
+            if (!splineApp) {
+                console.error('[DEBUG] No spline app');
+                return;
+            }
+
+            console.log('[DEBUG] === SPLINE APP ===');
+            console.log('splineApp:', splineApp);
+
+            const props = Object.keys(splineApp);
+            console.log('\nProperties:', props);
+
+            console.log('\n=== RENDERER ===');
+            console.log('_renderer:', splineApp._renderer);
+            console.log('render method:', splineApp.render);
+            console.log('requestRender:', splineApp.requestRender);
+
+            console.log('\n=== SCENE ===');
+            console.log('_scene:', splineApp._scene);
+            console.log('_camera:', splineApp._camera);
+
+            console.log('\n=== ANIMATION ===');
+            console.log('_animationControls:', splineApp._animationControls);
+            console.log('_controls:', splineApp._controls);
+
+            return splineApp;
+        }
+    };
+
+    console.log('[DEBUG] Commands:');
+    console.log('  debug.inspect(0)       - Inspect ski object structure');
+    console.log('  debug.testRotation(0)  - Test all rotation methods');
+    console.log('  debug.monitor(0)       - Monitor rotation changes');
+    console.log('  debug.spline()         - Inspect Spline app');
+})();
+</script>
+
+<!-- WEBFLOW -->
+<!--
+<div class="hero-container" id="hero-container"></div>
+-->
