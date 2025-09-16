@@ -1,0 +1,156 @@
+<!-- ALL-IN-ONE PAGE CODE (if global settings aren't working) -->
+<!-- Replace your entire page code with this -->
+
+<style>
+  /* Disable text selection for Spline scenes */
+  .type-trigger, .type-trigger *,
+  .ski_container, .ski_container *,
+  .spinesss, .spinesss *,
+  #allmountain-showcase,
+  #park-showcase,
+  #carve-showcase,
+  #powder-showcase {
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* Mobile-specific fixes */
+  @media (max-width: 768px) {
+    .type-trigger, .ski_container, .spinesss {
+      -webkit-touch-callout: none !important;
+      -webkit-user-select: none !important;
+      user-select: none !important;
+    }
+  }
+
+  /* Spline viewer styles */
+  spline-viewer {
+    width: 100%;
+    height: 100%;
+    display: block;
+  }
+</style>
+
+<!-- Load Spline Viewer -->
+<script type="module" src="https://spline-runtime-pro.pages.dev/spline-viewer.js"></script>
+
+<!-- Combined script for everything -->
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const CLOUDFLARE_URL = 'https://spline-runtime-pro.pages.dev';
+
+    console.log('🔍 Starting Spline initialization...');
+
+    // Wait for spline-viewer to be defined
+    function waitForSplineViewer(callback) {
+        let attempts = 0;
+        const maxAttempts = 50; // 5 seconds
+
+        const check = setInterval(() => {
+            attempts++;
+
+            if (customElements.get('spline-viewer')) {
+                clearInterval(check);
+                console.log('✅ Spline viewer custom element is ready');
+                callback();
+            } else if (attempts >= maxAttempts) {
+                clearInterval(check);
+                console.error('❌ Spline viewer failed to load after 5 seconds');
+            }
+        }, 100);
+    }
+
+    // Convert canvas elements to spline-viewer
+    function initializeSplineViewers() {
+        const canvases = document.querySelectorAll('canvas[data-spline-scene]');
+        console.log(`🔍 Found ${canvases.length} canvas elements to convert`);
+
+        if (canvases.length === 0) {
+            console.warn('⚠️ No canvas elements with data-spline-scene found');
+            return 0;
+        }
+
+        canvases.forEach(canvas => {
+            const scenePath = canvas.getAttribute('data-spline-scene');
+            if (!scenePath) {
+                console.warn('⚠️ Canvas missing data-spline-scene:', canvas);
+                return;
+            }
+
+            console.log(`📦 Converting canvas for scene: ${scenePath}`);
+
+            // Create spline-viewer element
+            const viewer = document.createElement('spline-viewer');
+            const url = `${CLOUDFLARE_URL}/scenes/${scenePath}/scene.splinecode`;
+
+            viewer.setAttribute('url', url);
+            viewer.setAttribute('id', canvas.id);
+            viewer.className = canvas.className;
+
+            // Copy all data attributes
+            Array.from(canvas.attributes).forEach(attr => {
+                if (attr.name.startsWith('data-')) {
+                    viewer.setAttribute(attr.name, attr.value);
+                }
+            });
+
+            // Replace canvas with viewer
+            canvas.replaceWith(viewer);
+            console.log(`✅ Created viewer for: ${scenePath}`);
+        });
+
+        console.log(`✅ Initialized ${canvases.length} Spline viewers`);
+        return canvases.length;
+    }
+
+    // Hover text functionality
+    function setupHoverText() {
+        const span = document.getElementById('typeSpan');
+        if (!span) return;
+
+        const defaultText = span.textContent;
+        const triggers = document.querySelectorAll('.type-trigger');
+
+        triggers.forEach(el => {
+            const value = el.getAttribute('data-type');
+            el.addEventListener('mouseenter', () => {
+                if (value) span.textContent = value;
+            });
+            el.addEventListener('mouseleave', () => {
+                span.textContent = defaultText;
+            });
+        });
+
+        console.log('✅ Hover text setup complete');
+    }
+
+    // Initialize everything
+    waitForSplineViewer(() => {
+        const viewerCount = initializeSplineViewers();
+        setupHoverText();
+
+        // Debug info
+        console.log('📊 Final state:');
+        console.log('  Canvas elements:', document.querySelectorAll('canvas[data-spline-scene]').length);
+        console.log('  Spline viewers:', document.querySelectorAll('spline-viewer').length);
+
+        // Add debug helper
+        window.debugSpline = {
+            checkCanvases: () => document.querySelectorAll('canvas[data-spline-scene]'),
+            checkViewers: () => document.querySelectorAll('spline-viewer'),
+            checkCustomElement: () => customElements.get('spline-viewer'),
+            forceConvert: () => {
+                waitForSplineViewer(() => {
+                    initializeSplineViewers();
+                });
+            }
+        };
+
+        console.log('💡 Debug helpers available: window.debugSpline');
+    });
+});
+</script>

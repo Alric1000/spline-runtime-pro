@@ -1,0 +1,236 @@
+<!-- FINAL SOLUTION: Smart 3-Scene Rotation (Looks like 4) -->
+<!-- Replace your GLOBAL FOOTER code with this -->
+
+<script async src="https://cdn.jsdelivr.net/npm/@finsweet/cookie-consent@1/fs-cc.js" fs-cc-mode="opt-in"></script>
+
+<script>
+(function() {
+    const CLOUDFLARE_URL = 'https://spline-runtime-pro.pages.dev';
+    const dpr = window.devicePixelRatio || 1;
+    const MAX_QUALITY_SCENES = 3; // Hard browser limit
+
+    console.log('[SMART-3D] Initializing smart rotation system');
+    console.log(`[SMART-3D] Device pixel ratio: ${dpr}`);
+
+    let allContainers = [];
+    let activeViewers = new Map(); // container -> viewer
+    let lastUpdate = 0;
+    const UPDATE_THROTTLE = 100; // ms
+
+    // Wait for spline-viewer custom element
+    function waitForSplineViewer() {
+        return new Promise((resolve) => {
+            const check = setInterval(() => {
+                if (customElements.get('spline-viewer')) {
+                    clearInterval(check);
+                    resolve();
+                }
+            }, 50);
+        });
+    }
+
+    // Create viewer for container
+    function createViewer(container) {
+        const sceneName = container.dataset.scene;
+        if (!sceneName) return null;
+
+        // Check if viewer already exists
+        let viewer = container.querySelector('spline-viewer');
+        if (viewer) return viewer;
+
+        // Create new viewer
+        viewer = document.createElement('spline-viewer');
+        viewer.setAttribute('url', `${CLOUDFLARE_URL}/scenes/${sceneName}/scene.splinecode`);
+        viewer.setAttribute('id', (container.id || 'viewer') + '-3d');
+        viewer.style.width = '100%';
+        viewer.style.height = '100%';
+        viewer.style.display = 'block';
+        viewer.style.visibility = 'visible';
+
+        container.appendChild(viewer);
+
+        // Apply quality fix after creation
+        setTimeout(() => fixQuality(viewer), 100);
+        setTimeout(() => fixQuality(viewer), 500);
+        setTimeout(() => fixQuality(viewer), 1000);
+
+        return viewer;
+    }
+
+    // Fix quality for a viewer
+    function fixQuality(viewer) {
+        const canvas = viewer.shadowRoot?.querySelector('canvas') ||
+                      viewer.querySelector('canvas');
+
+        if (canvas) {
+            const rect = canvas.getBoundingClientRect();
+            const width = Math.floor(rect.width);
+            const height = Math.floor(rect.height);
+
+            if (width > 0 && height > 0) {
+                canvas.width = width * dpr;
+                canvas.height = height * dpr;
+                canvas.style.width = width + 'px';
+                canvas.style.height = height + 'px';
+
+                // Try to fix renderer
+                const paths = [
+                    () => viewer._scene?._renderer,
+                    () => viewer._application?._renderer,
+                    () => viewer.application?._renderer,
+                    () => viewer.renderer
+                ];
+
+                for (const getPath of paths) {
+                    try {
+                        const renderer = getPath();
+                        if (renderer?.setPixelRatio) {
+                            renderer.setPixelRatio(dpr);
+                            renderer.setSize(width, height, false);
+                            break;
+                        }
+                    } catch (e) {}
+                }
+            }
+        }
+    }
+
+    // Calculate visibility score for container
+    function getVisibilityScore(container) {
+        const rect = container.getBoundingClientRect();
+        const viewportHeight = window.innerHeight;
+        const viewportWidth = window.innerWidth;
+
+        // Check if element is in viewport at all
+        if (rect.bottom < 0 || rect.top > viewportHeight ||
+            rect.right < 0 || rect.left > viewportWidth) {
+            return -1; // Not visible
+        }
+
+        // Calculate how much is visible
+        const visibleHeight = Math.min(rect.bottom, viewportHeight) - Math.max(rect.top, 0);
+        const visibleWidth = Math.min(rect.right, viewportWidth) - Math.max(rect.left, 0);
+        const visibleArea = visibleHeight * visibleWidth;
+        const totalArea = rect.height * rect.width;
+
+        // Score based on visibility percentage and distance from center
+        const visibilityPercent = totalArea > 0 ? visibleArea / totalArea : 0;
+        const centerY = rect.top + rect.height / 2;
+        const viewportCenterY = viewportHeight / 2;
+        const distanceFromCenter = Math.abs(centerY - viewportCenterY) / viewportHeight;
+
+        // Combined score (visibility is more important)
+        return visibilityPercent * 2 - distanceFromCenter;
+    }
+
+    // Update which scenes are active
+    function updateActiveScenes() {
+        const now = Date.now();
+        if (now - lastUpdate < UPDATE_THROTTLE) return;
+        lastUpdate = now;
+
+        // Calculate scores for all containers
+        const scores = allContainers.map(container => ({
+            container,
+            score: getVisibilityScore(container)
+        }));
+
+        // Sort by score (highest first)
+        scores.sort((a, b) => b.score - a.score);
+
+        // Get top 3 visible containers
+        const topContainers = scores
+            .filter(item => item.score > -1) // Only visible ones
+            .slice(0, MAX_QUALITY_SCENES)
+            .map(item => item.container);
+
+        // Deactivate viewers not in top 3
+        activeViewers.forEach((viewer, container) => {
+            if (!topContainers.includes(container)) {
+                console.log(`[SMART-3D] Removing viewer from ${container.id}`);
+                viewer.remove();
+                activeViewers.delete(container);
+            }
+        });
+
+        // Activate viewers for top 3
+        topContainers.forEach(container => {
+            if (!activeViewers.has(container)) {
+                console.log(`[SMART-3D] Creating viewer for ${container.id}`);
+                const viewer = createViewer(container);
+                if (viewer) {
+                    activeViewers.set(container, viewer);
+                }
+            }
+        });
+
+        // Log status
+        if (activeViewers.size > 0) {
+            console.log(`[SMART-3D] Active: ${activeViewers.size}/${MAX_QUALITY_SCENES} scenes`);
+        }
+    }
+
+    // Initialize system
+    async function initialize() {
+        await waitForSplineViewer();
+
+        // Find all containers
+        allContainers = Array.from(document.querySelectorAll('.spline-container'));
+        console.log(`[SMART-3D] Found ${allContainers.length} spline containers`);
+
+        if (allContainers.length === 0) {
+            console.warn('[SMART-3D] No spline-container elements found!');
+            return;
+        }
+
+        // Initial update
+        updateActiveScenes();
+
+        // Update on scroll and resize
+        let scrollTimer;
+        window.addEventListener('scroll', () => {
+            clearTimeout(scrollTimer);
+            scrollTimer = setTimeout(updateActiveScenes, 50);
+        }, { passive: true });
+
+        window.addEventListener('resize', updateActiveScenes);
+
+        // Also update periodically to catch any rendering issues
+        setInterval(() => {
+            // Fix quality on active viewers
+            activeViewers.forEach(viewer => fixQuality(viewer));
+        }, 2000);
+    }
+
+    // Start when DOM is ready
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initialize);
+    } else {
+        setTimeout(initialize, 100);
+    }
+
+    // Manual controls
+    window.smart3D = {
+        status: () => {
+            console.log(`[SMART-3D] Active viewers: ${activeViewers.size}/${MAX_QUALITY_SCENES}`);
+            activeViewers.forEach((viewer, container) => {
+                console.log(`  - ${container.id || 'unnamed'}: ${container.dataset.scene}`);
+            });
+        },
+
+        forceUpdate: () => {
+            updateActiveScenes();
+            activeViewers.forEach(viewer => fixQuality(viewer));
+        },
+
+        debug: () => {
+            allContainers.forEach(container => {
+                const score = getVisibilityScore(container);
+                console.log(`${container.id}: score=${score.toFixed(2)}, has viewer=${activeViewers.has(container)}`);
+            });
+        }
+    };
+
+    console.log('[SMART-3D] Ready. Commands: smart3D.status(), smart3D.forceUpdate(), smart3D.debug()');
+})();
+</script>

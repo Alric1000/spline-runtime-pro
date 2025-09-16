@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Screenshot Capture Tool</title>
+    <style>
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            padding: 20px;
+            background: #f0f0f0;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        .scene-container {
+            width: 600px;
+            height: 400px;
+            margin: 20px auto;
+            border: 2px solid #ccc;
+            background: white;
+        }
+        button {
+            padding: 10px 20px;
+            font-size: 16px;
+            background: #007bff;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background: #0056b3;
+        }
+        #status {
+            margin: 20px 0;
+            padding: 15px;
+            background: white;
+            border-radius: 5px;
+        }
+        .screenshot-preview {
+            display: inline-block;
+            margin: 10px;
+        }
+        .screenshot-preview img {
+            width: 200px;
+            height: 150px;
+            object-fit: cover;
+            border: 1px solid #ddd;
+        }
+    </style>
+    <script type="module" src="https://spline-runtime-pro.pages.dev/spline-viewer.js"></script>
+</head>
+<body>
+    <div class="container">
+        <h1>Spline Screenshot Capture Tool</h1>
+        <p>This tool captures high-quality screenshots of your Spline scenes to use as placeholders.</p>
+
+        <div id="status">Ready to capture screenshots...</div>
+
+        <div id="scene-container" class="scene-container"></div>
+
+        <div>
+            <button onclick="captureAll()">Capture All Scenes</button>
+            <button onclick="downloadAll()">Download All</button>
+            <button onclick="copyCode()">Copy Implementation Code</button>
+        </div>
+
+        <div id="previews"></div>
+    </div>
+
+    <script>
+        const CLOUDFLARE_URL = 'https://spline-runtime-pro.pages.dev';
+        const dpr = window.devicePixelRatio || 1;
+
+        // Scene configurations
+        const scenes = [
+            { id: 'allmountain', name: '1000SKISALLMOUNTAIN' },
+            { id: 'park', name: '1000SKISPARK' },
+            { id: 'carve', name: '1000SKSCARVE' },
+            { id: 'powder', name: '1000SKISPOWDER' }
+        ];
+
+        const screenshots = new Map();
+        let currentSceneIndex = 0;
+
+        function updateStatus(message) {
+            document.getElementById('status').innerHTML = message;
+        }
+
+        async function captureScene(sceneConfig) {
+            return new Promise((resolve) => {
+                updateStatus(`Capturing ${sceneConfig.id}...`);
+
+                const container = document.getElementById('scene-container');
+                container.innerHTML = '';
+
+                // Create viewer
+                const viewer = document.createElement('spline-viewer');
+                viewer.setAttribute('url', `${CLOUDFLARE_URL}/scenes/${sceneConfig.name}/scene.splinecode`);
+                viewer.style.width = '100%';
+                viewer.style.height = '100%';
+
+                container.appendChild(viewer);
+
+                // Wait for scene to load and render
+                setTimeout(() => {
+                    try {
+                        // Find canvas
+                        const canvas = viewer.shadowRoot?.querySelector('canvas') ||
+                                     viewer.querySelector('canvas');
+
+                        if (canvas) {
+                            // Fix quality before capture
+                            const rect = canvas.getBoundingClientRect();
+                            const width = Math.floor(rect.width);
+                            const height = Math.floor(rect.height);
+
+                            canvas.width = width * dpr;
+                            canvas.height = height * dpr;
+
+                            // Capture after another brief delay
+                            setTimeout(() => {
+                                // Create high-quality screenshot
+                                const tempCanvas = document.createElement('canvas');
+                                tempCanvas.width = width * dpr;
+                                tempCanvas.height = height * dpr;
+                                const ctx = tempCanvas.getContext('2d');
+
+                                ctx.drawImage(canvas, 0, 0, tempCanvas.width, tempCanvas.height);
+
+                                // Convert to data URL
+                                const dataUrl = tempCanvas.toDataURL('image/png', 1.0);
+                                screenshots.set(sceneConfig.id, dataUrl);
+
+                                // Show preview
+                                addPreview(sceneConfig.id, dataUrl);
+
+                                updateStatus(`Captured ${sceneConfig.id} successfully!`);
+                                resolve(dataUrl);
+                            }, 1000);
+                        } else {
+                            updateStatus(`Failed to find canvas for ${sceneConfig.id}`);
+                            resolve(null);
+                        }
+                    } catch (e) {
+                        console.error('Capture error:', e);
+                        updateStatus(`Error capturing ${sceneConfig.id}: ${e.message}`);
+                        resolve(null);
+                    }
+                }, 3000); // Wait for scene to fully load
+            });
+        }
+
+        function addPreview(id, dataUrl) {
+            const previews = document.getElementById('previews');
+
+            const preview = document.createElement('div');
+            preview.className = 'screenshot-preview';
+            preview.innerHTML = `
+                <img src="${dataUrl}" alt="${id}">
+                <div>${id}.png</div>
+            `;
+
+            previews.appendChild(preview);
+        }
+
+        async function captureAll() {
+            screenshots.clear();
+            document.getElementById('previews').innerHTML = '';
+
+            for (const scene of scenes) {
+                await captureScene(scene);
+                await new Promise(r => setTimeout(r, 500)); // Brief pause between captures
+            }
+
+            updateStatus(`✅ Captured all ${scenes.length} scenes! Click "Download All" to save.`);
+
+            // Clear the viewer
+            document.getElementById('scene-container').innerHTML = '';
+        }
+
+        function downloadAll() {
+            if (screenshots.size === 0) {
+                alert('No screenshots captured yet. Click "Capture All Scenes" first.');
+                return;
+            }
+
+            screenshots.forEach((dataUrl, id) => {
+                // Create download link
+                const link = document.createElement('a');
+                link.download = `${id}-screenshot.png`;
+                link.href = dataUrl;
+                link.click();
+            });
+
+            updateStatus(`Downloaded ${screenshots.size} screenshots. Add them to your repo in /screenshots/ folder.`);
+        }
+
+        function copyCode() {
+            const code = `// Screenshot URLs (update after uploading to repo)
+const screenshotUrls = {
+    'allmountain-container': '${CLOUDFLARE_URL}/screenshots/allmountain-screenshot.png',
+    'park-container': '${CLOUDFLARE_URL}/screenshots/park-screenshot.png',
+    'carve-container': '${CLOUDFLARE_URL}/screenshots/carve-screenshot.png',
+    'powder-container': '${CLOUDFLARE_URL}/screenshots/powder-screenshot.png'
+};`;
+
+            navigator.clipboard.writeText(code);
+            alert('Implementation code copied to clipboard!');
+        }
+    </script>
+</body>
+</html>

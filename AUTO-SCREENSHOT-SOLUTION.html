@@ -1,0 +1,343 @@
+<!-- AUTO-SCREENSHOT SOLUTION: Capture 3D as images, show 3D on demand -->
+<!-- The script captures screenshots of each 3D scene and uses them as placeholders -->
+
+<script async src="https://cdn.jsdelivr.net/npm/@finsweet/cookie-consent@1/fs-cc.js" fs-cc-mode="opt-in"></script>
+
+<script>
+(function() {
+    const CLOUDFLARE_URL = 'https://spline-runtime-pro.pages.dev';
+    const dpr = window.devicePixelRatio || 1;
+    const MAX_LIVE_SCENES = 3; // Can show 3 in perfect quality
+    const CACHE_KEY = 'spline-screenshots-v1';
+    const CACHE_EXPIRY = 7 * 24 * 60 * 60 * 1000; // 7 days
+
+    console.log('[AUTO-SCREENSHOT] Initializing automatic screenshot system');
+
+    let containers = [];
+    let screenshots = new Map(); // container id -> image data
+    let liveViewers = new Map(); // container -> viewer
+    let activeCount = 0;
+
+    // Wait for spline-viewer custom element
+    function waitForSplineViewer() {
+        return new Promise((resolve) => {
+            const check = setInterval(() => {
+                if (customElements.get('spline-viewer')) {
+                    clearInterval(check);
+                    resolve();
+                }
+            }, 50);
+        });
+    }
+
+    // Load cached screenshots from localStorage
+    function loadCachedScreenshots() {
+        try {
+            const cached = localStorage.getItem(CACHE_KEY);
+            if (cached) {
+                const data = JSON.parse(cached);
+                if (Date.now() - data.timestamp < CACHE_EXPIRY) {
+                    console.log('[AUTO-SCREENSHOT] Found cached screenshots');
+                    return new Map(data.screenshots);
+                }
+            }
+        } catch (e) {
+            console.warn('[AUTO-SCREENSHOT] Could not load cache:', e);
+        }
+        return new Map();
+    }
+
+    // Save screenshots to localStorage
+    function saveScreenshotsToCache() {
+        try {
+            const data = {
+                timestamp: Date.now(),
+                screenshots: Array.from(screenshots.entries())
+            };
+            localStorage.setItem(CACHE_KEY, JSON.stringify(data));
+            console.log('[AUTO-SCREENSHOT] Saved screenshots to cache');
+        } catch (e) {
+            console.warn('[AUTO-SCREENSHOT] Could not save cache:', e);
+        }
+    }
+
+    // Capture screenshot from viewer
+    async function captureScreenshot(viewer, container) {
+        return new Promise((resolve) => {
+            setTimeout(() => {
+                try {
+                    // Find the canvas
+                    const canvas = viewer.shadowRoot?.querySelector('canvas') ||
+                                 viewer.querySelector('canvas');
+
+                    if (canvas) {
+                        // Ensure it's rendered at high quality
+                        const rect = canvas.getBoundingClientRect();
+                        const width = Math.floor(rect.width);
+                        const height = Math.floor(rect.height);
+
+                        // Create a temporary canvas for the screenshot
+                        const tempCanvas = document.createElement('canvas');
+                        tempCanvas.width = width * dpr;
+                        tempCanvas.height = height * dpr;
+                        const ctx = tempCanvas.getContext('2d');
+
+                        // Draw the WebGL canvas to our temp canvas
+                        ctx.drawImage(canvas, 0, 0, tempCanvas.width, tempCanvas.height);
+
+                        // Convert to data URL (compressed JPEG for smaller size)
+                        const dataUrl = tempCanvas.toDataURL('image/jpeg', 0.9);
+
+                        screenshots.set(container.id, dataUrl);
+                        console.log(`[AUTO-SCREENSHOT] Captured ${container.id}`);
+                        resolve(dataUrl);
+                    } else {
+                        resolve(null);
+                    }
+                } catch (e) {
+                    console.error('[AUTO-SCREENSHOT] Capture failed:', e);
+                    resolve(null);
+                }
+            }, 2000); // Wait for scene to fully render
+        });
+    }
+
+    // Create screenshot placeholder
+    function createScreenshotPlaceholder(container, imageData) {
+        const placeholder = document.createElement('div');
+        placeholder.className = 'screenshot-placeholder';
+        placeholder.style.cssText = `
+            width: 100%;
+            height: 100%;
+            position: relative;
+            cursor: pointer;
+            overflow: hidden;
+            background-size: cover;
+            background-position: center;
+            background-image: url(${imageData});
+        `;
+
+        // Add overlay
+        const overlay = document.createElement('div');
+        overlay.style.cssText = `
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.3s ease;
+        `;
+
+        const label = document.createElement('div');
+        label.style.cssText = `
+            background: rgba(0,0,0,0.8);
+            color: white;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 14px;
+            opacity: 0;
+            transform: scale(0.9);
+            transition: all 0.3s ease;
+        `;
+        label.textContent = 'Click for 3D View';
+
+        overlay.appendChild(label);
+        placeholder.appendChild(overlay);
+
+        // Hover effects
+        placeholder.addEventListener('mouseenter', () => {
+            overlay.style.background = 'rgba(0,0,0,0.3)';
+            label.style.opacity = '1';
+            label.style.transform = 'scale(1)';
+        });
+
+        placeholder.addEventListener('mouseleave', () => {
+            overlay.style.background = 'rgba(0,0,0,0)';
+            label.style.opacity = '0';
+            label.style.transform = 'scale(0.9)';
+        });
+
+        // Click to activate 3D
+        placeholder.addEventListener('click', () => {
+            activateContainer(container);
+        });
+
+        container.appendChild(placeholder);
+        return placeholder;
+    }
+
+    // Create viewer
+    function createViewer(container) {
+        const sceneName = container.dataset.scene;
+        if (!sceneName) return null;
+
+        const viewer = document.createElement('spline-viewer');
+        viewer.setAttribute('url', `${CLOUDFLARE_URL}/scenes/${sceneName}/scene.splinecode`);
+        viewer.setAttribute('id', (container.id || 'viewer') + '-3d');
+        viewer.style.width = '100%';
+        viewer.style.height = '100%';
+        viewer.style.display = 'block';
+
+        container.appendChild(viewer);
+
+        // Fix quality
+        setTimeout(() => fixQuality(viewer), 100);
+        setTimeout(() => fixQuality(viewer), 500);
+
+        return viewer;
+    }
+
+    // Fix quality
+    function fixQuality(viewer) {
+        const canvas = viewer.shadowRoot?.querySelector('canvas') ||
+                      viewer.querySelector('canvas');
+
+        if (canvas) {
+            const rect = canvas.getBoundingClientRect();
+            const width = Math.floor(rect.width);
+            const height = Math.floor(rect.height);
+
+            if (width > 0 && height > 0) {
+                canvas.width = width * dpr;
+                canvas.height = height * dpr;
+                canvas.style.width = width + 'px';
+                canvas.style.height = height + 'px';
+
+                // Fix renderer
+                const paths = [
+                    () => viewer._scene?._renderer,
+                    () => viewer._application?._renderer,
+                    () => viewer.renderer
+                ];
+
+                for (const getPath of paths) {
+                    try {
+                        const renderer = getPath();
+                        if (renderer?.setPixelRatio) {
+                            renderer.setPixelRatio(dpr);
+                            renderer.setSize(width, height, false);
+                            break;
+                        }
+                    } catch (e) {}
+                }
+            }
+        }
+    }
+
+    // Activate container (show 3D)
+    function activateContainer(container) {
+        if (liveViewers.has(container)) return;
+
+        // Check limit
+        if (activeCount >= MAX_LIVE_SCENES) {
+            // Deactivate the oldest
+            const [oldestContainer] = liveViewers.keys();
+            deactivateContainer(oldestContainer);
+        }
+
+        // Remove screenshot placeholder
+        const placeholder = container.querySelector('.screenshot-placeholder');
+        if (placeholder) placeholder.remove();
+
+        // Create viewer
+        const viewer = createViewer(container);
+        liveViewers.set(container, viewer);
+        activeCount++;
+
+        console.log(`[AUTO-SCREENSHOT] Activated 3D for ${container.id} (${activeCount}/${MAX_LIVE_SCENES})`);
+    }
+
+    // Deactivate container (show screenshot)
+    function deactivateContainer(container) {
+        const viewer = liveViewers.get(container);
+        if (!viewer) return;
+
+        // Remove viewer
+        viewer.remove();
+        liveViewers.delete(container);
+        activeCount--;
+
+        // Add screenshot placeholder
+        const imageData = screenshots.get(container.id);
+        if (imageData) {
+            createScreenshotPlaceholder(container, imageData);
+        }
+
+        console.log(`[AUTO-SCREENSHOT] Deactivated 3D for ${container.id} (${activeCount}/${MAX_LIVE_SCENES})`);
+    }
+
+    // Initialize system
+    async function initialize() {
+        await waitForSplineViewer();
+
+        // Find all containers
+        containers = Array.from(document.querySelectorAll('.spline-container'));
+        console.log(`[AUTO-SCREENSHOT] Found ${containers.length} containers`);
+
+        // Load cached screenshots
+        screenshots = loadCachedScreenshots();
+
+        // Check if we need to generate screenshots
+        const needsScreenshots = containers.some(c => !screenshots.has(c.id));
+
+        if (needsScreenshots) {
+            console.log('[AUTO-SCREENSHOT] Generating screenshots...');
+
+            // Temporarily create viewers to capture screenshots
+            for (const container of containers) {
+                if (!screenshots.has(container.id)) {
+                    const viewer = createViewer(container);
+                    await captureScreenshot(viewer, container);
+                    viewer.remove();
+                }
+            }
+
+            // Save to cache
+            saveScreenshotsToCache();
+        }
+
+        // Show all as screenshots initially
+        containers.forEach(container => {
+            const imageData = screenshots.get(container.id);
+            if (imageData) {
+                createScreenshotPlaceholder(container, imageData);
+            }
+        });
+
+        // Auto-activate first 3 on page load (optional)
+        // containers.slice(0, MAX_LIVE_SCENES).forEach(activateContainer);
+
+        console.log('[AUTO-SCREENSHOT] System ready - all scenes shown as screenshots');
+    }
+
+    // Start when DOM is ready
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initialize);
+    } else {
+        setTimeout(initialize, 100);
+    }
+
+    // Manual controls
+    window.autoScreenshot = {
+        status: () => {
+            console.log(`[AUTO-SCREENSHOT] Active 3D: ${activeCount}/${MAX_LIVE_SCENES}`);
+            console.log(`[AUTO-SCREENSHOT] Screenshots: ${screenshots.size}`);
+            console.log(`[AUTO-SCREENSHOT] Cache size: ${JSON.stringify(Array.from(screenshots.values())).length} bytes`);
+        },
+
+        clearCache: () => {
+            localStorage.removeItem(CACHE_KEY);
+            screenshots.clear();
+            console.log('[AUTO-SCREENSHOT] Cache cleared');
+        },
+
+        regenerate: async () => {
+            screenshots.clear();
+            await initialize();
+        }
+    };
+
+    console.log('[AUTO-SCREENSHOT] Commands: autoScreenshot.status(), autoScreenshot.clearCache()');
+})();
+</script>

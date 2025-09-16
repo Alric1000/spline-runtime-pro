@@ -1,0 +1,197 @@
+<!-- FINAL SOLUTION: Fix pixel ratio on existing spline-viewer elements -->
+<!-- Replace your GLOBAL FOOTER code with this -->
+
+<script async src="https://cdn.jsdelivr.net/npm/@finsweet/cookie-consent@1/fs-cc.js" fs-cc-mode="opt-in"></script>
+
+<script>
+(function() {
+    const CLOUDFLARE_URL = 'https://spline-runtime-pro.pages.dev';
+    const dpr = window.devicePixelRatio || 1;
+
+    console.log(`[SPLINE] Device pixel ratio: ${dpr}`);
+
+    // Scene configuration
+    const sceneMap = {
+        'All Mountain': { id: 'allmountain-showcase', scene: '1000SKISALLMOUNTAIN' },
+        'Park': { id: 'park-showcase', scene: '1000SKISPARK' },
+        'Carve': { id: 'carve-showcase', scene: '1000SKSCARVE' },
+        'Powder': { id: 'powder-showcase', scene: '1000SKISPOWDER' }
+    };
+
+    // Step 1: Create spline-viewer elements in empty containers
+    function createViewers() {
+        if (!customElements.get('spline-viewer')) {
+            setTimeout(createViewers, 100);
+            return;
+        }
+
+        const containers = document.querySelectorAll('.type-trigger');
+
+        containers.forEach((container, index) => {
+            if (!container.querySelector('spline-viewer')) {
+                const dataType = container.getAttribute('data-type');
+                const config = sceneMap[dataType] || Object.values(sceneMap)[index];
+
+                if (config) {
+                    const viewer = document.createElement('spline-viewer');
+                    viewer.setAttribute('id', config.id);
+                    viewer.setAttribute('url', `${CLOUDFLARE_URL}/scenes/${config.scene}/scene.splinecode`);
+                    viewer.style.width = '100%';
+                    viewer.style.height = '100%';
+                    viewer.style.display = 'block';
+
+                    container.appendChild(viewer);
+                    console.log(`[SPLINE] Created viewer: ${config.id}`);
+                }
+            }
+        });
+
+        // After creating viewers, fix pixel ratio
+        setTimeout(fixPixelRatio, 1000);
+        setTimeout(fixPixelRatio, 2000);
+        setTimeout(fixPixelRatio, 3000);
+    }
+
+    // Step 2: Fix pixel ratio on all viewers
+    function fixPixelRatio() {
+        const viewers = document.querySelectorAll('spline-viewer');
+
+        viewers.forEach(viewer => {
+            // Try to access the canvas inside the viewer
+            let canvas = null;
+
+            // Check shadow DOM first
+            if (viewer.shadowRoot) {
+                canvas = viewer.shadowRoot.querySelector('canvas');
+            }
+
+            // Check regular DOM
+            if (!canvas) {
+                canvas = viewer.querySelector('canvas');
+            }
+
+            // Check for canvas as direct child
+            if (!canvas && viewer.firstElementChild && viewer.firstElementChild.tagName === 'CANVAS') {
+                canvas = viewer.firstElementChild;
+            }
+
+            if (canvas) {
+                const rect = canvas.getBoundingClientRect();
+                const width = Math.floor(rect.width);
+                const height = Math.floor(rect.height);
+
+                // Check if canvas needs fixing
+                if (canvas.width !== width * dpr || canvas.height !== height * dpr) {
+                    console.log(`[SPLINE] Fixing canvas from ${canvas.width}x${canvas.height} to ${width * dpr}x${height * dpr}`);
+
+                    canvas.width = width * dpr;
+                    canvas.height = height * dpr;
+                    canvas.style.width = width + 'px';
+                    canvas.style.height = height + 'px';
+
+                    // Try to find and fix the renderer
+                    fixRenderer(viewer);
+                }
+            }
+        });
+    }
+
+    // Step 3: Try to fix the THREE.js renderer
+    function fixRenderer(viewer) {
+        // Try various paths to find the renderer
+        const paths = [
+            () => viewer._scene?._renderer,
+            () => viewer._application?._renderer,
+            () => viewer.application?._renderer,
+            () => viewer._app?._renderer,
+            () => viewer.app?._renderer,
+            () => viewer.renderer,
+            () => viewer._renderer,
+            () => viewer._spline?._renderer,
+            () => viewer.spline?._renderer
+        ];
+
+        for (const getPath of paths) {
+            try {
+                const renderer = getPath();
+                if (renderer && renderer.setPixelRatio) {
+                    console.log(`[SPLINE] Found renderer, setting pixel ratio to ${dpr}`);
+                    renderer.setPixelRatio(dpr);
+
+                    if (renderer.setSize) {
+                        const canvas = renderer.domElement;
+                        if (canvas) {
+                            const rect = canvas.getBoundingClientRect();
+                            renderer.setSize(Math.floor(rect.width), Math.floor(rect.height), false);
+                        }
+                    }
+                    return true;
+                }
+            } catch (e) {}
+        }
+        return false;
+    }
+
+    // Step 4: Monitor and fix continuously
+    function monitorAndFix() {
+        // Fix every second for 10 seconds
+        let count = 0;
+        const interval = setInterval(() => {
+            count++;
+            fixPixelRatio();
+
+            if (count >= 10) {
+                clearInterval(interval);
+                console.log('[SPLINE] Monitoring complete');
+            }
+        }, 1000);
+    }
+
+    // Initialize
+    document.addEventListener('DOMContentLoaded', () => {
+        createViewers();
+        monitorAndFix();
+    });
+
+    // Also run on window load
+    window.addEventListener('load', () => {
+        setTimeout(fixPixelRatio, 500);
+    });
+
+    // Manual fix command
+    window.fixSplinePixelRatio = function() {
+        console.log('[SPLINE] Manual pixel ratio fix triggered');
+        fixPixelRatio();
+
+        // Also try a more aggressive approach
+        document.querySelectorAll('spline-viewer').forEach(viewer => {
+            // Force a re-render by hiding and showing
+            const display = viewer.style.display;
+            viewer.style.display = 'none';
+            setTimeout(() => {
+                viewer.style.display = display || 'block';
+                fixPixelRatio();
+            }, 10);
+        });
+    };
+
+    // Debug command
+    window.debugSpline = function() {
+        const viewers = document.querySelectorAll('spline-viewer');
+        viewers.forEach(viewer => {
+            console.log('Viewer:', viewer.id);
+
+            let canvas = viewer.shadowRoot?.querySelector('canvas') || viewer.querySelector('canvas');
+            if (canvas) {
+                const rect = canvas.getBoundingClientRect();
+                console.log('  Canvas size:', canvas.width, 'x', canvas.height);
+                console.log('  Should be:', rect.width * dpr, 'x', rect.height * dpr);
+                console.log('  Correct:', canvas.width === rect.width * dpr ? '✅' : '❌');
+            }
+        });
+    };
+
+    console.log('[SPLINE] Pixel ratio fix initialized');
+    console.log('[SPLINE] Commands: window.fixSplinePixelRatio(), window.debugSpline()');
+})();
+</script>

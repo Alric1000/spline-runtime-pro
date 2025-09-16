@@ -1,0 +1,252 @@
+<!-- SOLUTION: Force high quality for all 4 scenes -->
+<!-- Replace your GLOBAL FOOTER code with this -->
+
+<script async src="https://cdn.jsdelivr.net/npm/@finsweet/cookie-consent@1/fs-cc.js" fs-cc-mode="opt-in"></script>
+
+<script>
+(function() {
+    const CLOUDFLARE_URL = 'https://spline-runtime-pro.pages.dev';
+    const dpr = window.devicePixelRatio || 1;
+
+    console.log(`[SPLINE-4] Device pixel ratio: ${dpr}`);
+    console.log(`[SPLINE-4] Forcing quality for 4 scenes`);
+
+    // Track all viewers
+    const allViewers = new Map();
+
+    // Wait for spline-viewer to be defined
+    function waitForSplineViewer() {
+        return new Promise((resolve) => {
+            const check = setInterval(() => {
+                if (customElements.get('spline-viewer')) {
+                    clearInterval(check);
+                    resolve();
+                }
+            }, 50);
+        });
+    }
+
+    // Create viewer in container
+    function createViewer(container) {
+        const sceneName = container.dataset.scene;
+        if (!sceneName) return null;
+
+        // Check if viewer already exists
+        if (container.querySelector('spline-viewer')) {
+            return container.querySelector('spline-viewer');
+        }
+
+        // Create spline-viewer element
+        const viewer = document.createElement('spline-viewer');
+        viewer.setAttribute('url', `${CLOUDFLARE_URL}/scenes/${sceneName}/scene.splinecode`);
+        viewer.setAttribute('id', container.id + '-viewer');
+
+        // IMPORTANT: All viewers visible from start
+        viewer.style.visibility = 'visible';
+        viewer.style.width = '100%';
+        viewer.style.height = '100%';
+        viewer.style.display = 'block';
+
+        container.appendChild(viewer);
+        console.log(`[SPLINE-4] Created viewer for ${sceneName}`);
+
+        return viewer;
+    }
+
+    // Aggressively fix pixel ratio and force quality
+    function forceHighQuality(viewer) {
+        // Try multiple times to ensure it sticks
+        const attempts = [0, 100, 250, 500, 1000, 2000, 3000, 5000];
+
+        attempts.forEach(delay => {
+            setTimeout(() => {
+                // Find canvas
+                const canvas = viewer.shadowRoot?.querySelector('canvas') ||
+                             viewer.querySelector('canvas') ||
+                             viewer.getElementsByTagName('canvas')[0];
+
+                if (canvas) {
+                    const rect = canvas.getBoundingClientRect();
+                    const width = Math.floor(rect.width);
+                    const height = Math.floor(rect.height);
+
+                    // Force high-res canvas
+                    const targetWidth = width * dpr;
+                    const targetHeight = height * dpr;
+
+                    if (canvas.width !== targetWidth || canvas.height !== targetHeight) {
+                        console.log(`[SPLINE-4] Forcing canvas from ${canvas.width}x${canvas.height} to ${targetWidth}x${targetHeight}`);
+
+                        canvas.width = targetWidth;
+                        canvas.height = targetHeight;
+                        canvas.style.width = width + 'px';
+                        canvas.style.height = height + 'px';
+
+                        // Set canvas attributes to prevent downscaling
+                        canvas.setAttribute('width', targetWidth);
+                        canvas.setAttribute('height', targetHeight);
+                    }
+
+                    // Find and configure renderer
+                    const rendererPaths = [
+                        () => viewer._scene?._renderer,
+                        () => viewer._application?._renderer,
+                        () => viewer.application?._renderer,
+                        () => viewer._app?._renderer,
+                        () => viewer.app?._renderer,
+                        () => viewer.renderer,
+                        () => viewer._renderer,
+                        () => viewer.scene?._renderer
+                    ];
+
+                    for (const getRenderer of rendererPaths) {
+                        try {
+                            const renderer = getRenderer();
+                            if (renderer) {
+                                // Force pixel ratio
+                                if (renderer.setPixelRatio) {
+                                    renderer.setPixelRatio(dpr);
+                                }
+
+                                // Force size
+                                if (renderer.setSize) {
+                                    renderer.setSize(width, height, false);
+                                }
+
+                                // Force quality settings
+                                if (renderer.shadowMap) {
+                                    renderer.shadowMap.enabled = true;
+                                    renderer.shadowMap.type = 2; // PCFSoftShadowMap
+                                }
+
+                                // Disable auto-clear to prevent flashing
+                                if (renderer.autoClear !== undefined) {
+                                    renderer.autoClear = true;
+                                }
+
+                                // Force antialiasing
+                                if (renderer.antialias !== undefined) {
+                                    renderer.antialias = true;
+                                }
+
+                                // Set preserve drawing buffer for quality
+                                if (renderer.preserveDrawingBuffer !== undefined) {
+                                    renderer.preserveDrawingBuffer = true;
+                                }
+
+                                // Get WebGL context and force quality
+                                const gl = renderer.getContext?.() || renderer.context;
+                                if (gl) {
+                                    // Disable automatic power preference switching
+                                    if (gl.powerPreference !== undefined) {
+                                        gl.powerPreference = 'high-performance';
+                                    }
+                                }
+
+                                console.log(`[SPLINE-4] Renderer configured for high quality (attempt ${delay}ms)`);
+                                break;
+                            }
+                        } catch (e) {}
+                    }
+                }
+            }, delay);
+        });
+    }
+
+    // Monitor canvas for unwanted changes
+    function monitorCanvas(viewer) {
+        const observer = new MutationObserver((mutations) => {
+            mutations.forEach((mutation) => {
+                if (mutation.attributeName === 'width' ||
+                    mutation.attributeName === 'height' ||
+                    mutation.attributeName === 'style') {
+                    console.log(`[SPLINE-4] Canvas modified, re-applying quality fix`);
+                    forceHighQuality(viewer);
+                }
+            });
+        });
+
+        // Observe the viewer and its children
+        observer.observe(viewer, {
+            attributes: true,
+            childList: true,
+            subtree: true,
+            attributeFilter: ['width', 'height', 'style']
+        });
+    }
+
+    // Main initialization
+    async function initialize() {
+        await waitForSplineViewer();
+
+        // Find all spline containers
+        const containers = document.querySelectorAll('.spline-container');
+        console.log(`[SPLINE-4] Found ${containers.length} containers`);
+
+        // Create all viewers immediately
+        containers.forEach(container => {
+            const viewer = createViewer(container);
+            if (viewer) {
+                allViewers.set(viewer.id, viewer);
+
+                // Apply quality fixes
+                forceHighQuality(viewer);
+
+                // Monitor for changes
+                monitorCanvas(viewer);
+            }
+        });
+
+        // Keep fixing quality periodically
+        setInterval(() => {
+            allViewers.forEach(viewer => {
+                forceHighQuality(viewer);
+            });
+        }, 5000); // Every 5 seconds
+    }
+
+    // Start when DOM is ready
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initialize);
+    } else {
+        initialize();
+    }
+
+    // Manual commands
+    window.spline4 = {
+        status: () => {
+            console.log(`[SPLINE-4] ${allViewers.size} viewers active`);
+            allViewers.forEach((viewer, id) => {
+                const canvas = viewer.shadowRoot?.querySelector('canvas') || viewer.querySelector('canvas');
+                if (canvas) {
+                    const rect = canvas.getBoundingClientRect();
+                    const correct = canvas.width === rect.width * dpr;
+                    console.log(`  ${id}: ${correct ? '✅' : '❌'} ${canvas.width}x${canvas.height}`);
+                }
+            });
+        },
+
+        forceAll: () => {
+            console.log('[SPLINE-4] Forcing quality on all viewers...');
+            allViewers.forEach(viewer => {
+                forceHighQuality(viewer);
+            });
+        },
+
+        // Nuclear option - recreate all viewers
+        recreateAll: () => {
+            console.log('[SPLINE-4] Recreating all viewers...');
+            document.querySelectorAll('.spline-container').forEach(container => {
+                const viewer = container.querySelector('spline-viewer');
+                if (viewer) {
+                    viewer.remove();
+                }
+            });
+            setTimeout(initialize, 100);
+        }
+    };
+
+    console.log('[SPLINE-4] Force-quality system initialized');
+    console.log('[SPLINE-4] Commands: spline4.status(), spline4.forceAll(), spline4.recreateAll()');
+})();
+</script>

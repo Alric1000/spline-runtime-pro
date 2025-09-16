@@ -1,0 +1,122 @@
+<!-- SOLUTION: Wait for canvas elements to exist before converting -->
+<!-- Replace your GLOBAL FOOTER script with this -->
+
+<script>
+// More robust initialization that waits for canvas elements
+(function() {
+    const CLOUDFLARE_URL = 'https://spline-runtime-pro.pages.dev';
+
+    console.log('[SPLINE INIT] Starting initialization process...');
+
+    // Function to check and convert canvases
+    function tryConversion() {
+        // First, check if spline-viewer is defined
+        if (!customElements.get('spline-viewer')) {
+            console.log('[SPLINE INIT] Waiting for spline-viewer custom element...');
+            setTimeout(tryConversion, 100);
+            return;
+        }
+
+        // Look for canvas elements
+        const canvases = document.querySelectorAll('canvas[data-spline-scene]');
+
+        if (canvases.length === 0) {
+            // Also try without the canvas tag requirement
+            const anySplineElements = document.querySelectorAll('[data-spline-scene]');
+            console.log(`[SPLINE INIT] No canvas found. Found ${anySplineElements.length} elements with data-spline-scene`);
+
+            // Log what we did find
+            anySplineElements.forEach(el => {
+                console.log(`  - ${el.tagName}#${el.id} with scene: ${el.getAttribute('data-spline-scene')}`);
+            });
+
+            return false;
+        }
+
+        console.log(`[SPLINE INIT] Found ${canvases.length} canvas elements to convert`);
+
+        // Convert each canvas
+        canvases.forEach(canvas => {
+            const scenePath = canvas.getAttribute('data-spline-scene');
+            if (!scenePath) return;
+
+            console.log(`[SPLINE INIT] Converting ${canvas.id} with scene: ${scenePath}`);
+
+            // Create spline-viewer element
+            const viewer = document.createElement('spline-viewer');
+            viewer.setAttribute('url', `${CLOUDFLARE_URL}/scenes/${scenePath}/scene.splinecode`);
+            viewer.setAttribute('id', canvas.id);
+            viewer.className = canvas.className;
+
+            // Copy all data attributes
+            Array.from(canvas.attributes).forEach(attr => {
+                if (attr.name.startsWith('data-')) {
+                    viewer.setAttribute(attr.name, attr.value);
+                }
+            });
+
+            // Replace canvas with viewer
+            canvas.replaceWith(viewer);
+            console.log(`[SPLINE INIT] ✅ Converted ${canvas.id}`);
+        });
+
+        return true;
+    }
+
+    // Try multiple times with different strategies
+    let attempts = 0;
+    const maxAttempts = 30; // 3 seconds
+
+    function attemptInitialization() {
+        attempts++;
+
+        if (attempts > maxAttempts) {
+            console.error('[SPLINE INIT] ❌ Failed to find canvas elements after 3 seconds');
+            console.log('[SPLINE INIT] Debugging info:');
+            console.log('  All canvases:', document.querySelectorAll('canvas'));
+            console.log('  Elements with data-spline-scene:', document.querySelectorAll('[data-spline-scene]'));
+            return;
+        }
+
+        const success = tryConversion();
+
+        if (!success && attempts < maxAttempts) {
+            setTimeout(attemptInitialization, 100);
+        }
+    }
+
+    // Start when DOM is ready
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', attemptInitialization);
+    } else {
+        // DOM already loaded, but wait a bit for dynamic content
+        setTimeout(attemptInitialization, 100);
+    }
+
+    // Also try on window load (for embedded content)
+    window.addEventListener('load', () => {
+        setTimeout(tryConversion, 500);
+    });
+
+    // Expose manual trigger
+    window.initSplineManually = function() {
+        console.log('[SPLINE INIT] Manual initialization triggered');
+        const canvases = document.querySelectorAll('canvas[data-spline-scene]');
+        console.log(`Found ${canvases.length} canvases`);
+
+        if (canvases.length > 0) {
+            tryConversion();
+        } else {
+            // Try to find any element with data-spline-scene
+            const elements = document.querySelectorAll('[data-spline-scene]');
+            console.log(`Found ${elements.length} elements with data-spline-scene attribute`);
+
+            elements.forEach(el => {
+                console.log(`Element: ${el.tagName}#${el.id}`, el);
+            });
+        }
+    };
+
+    console.log('[SPLINE INIT] 💡 If scenes don\'t load, run: window.initSplineManually()');
+})();
+</script>
