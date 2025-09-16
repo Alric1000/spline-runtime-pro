@@ -209,19 +209,42 @@
 
         try {
             // Attempt to access the Spline application
-            const app = viewer._application || viewer.application || viewer._app;
+            const app = viewer._application || viewer.application || viewer._app || viewer.spline;
 
-            if (app && app.scene) {
-                // Look for ski objects by name or index
-                const skiNames = ['ski_allmountain', 'ski_park', 'ski_carve', 'ski_powder'];
-                const skiObject = app.scene.getObjectByName(skiNames[skiIndex]);
+            if (app) {
+                // Updated group names to match your scene
+                const skiNames = ['ALLMOUNTAIN', 'PARK', 'CARVE', 'POWDER'];
+
+                // Try different methods to find the object
+                let skiObject = null;
+
+                // Method 1: Direct scene access
+                if (app.scene && app.scene.getObjectByName) {
+                    skiObject = app.scene.getObjectByName(skiNames[skiIndex]);
+                }
+
+                // Method 2: Through findObjectByName
+                if (!skiObject && app.findObjectByName) {
+                    skiObject = app.findObjectByName(skiNames[skiIndex]);
+                }
+
+                // Method 3: Through getAllObjects
+                if (!skiObject && app.getAllObjects) {
+                    const objects = app.getAllObjects();
+                    skiObject = objects.find(obj => obj.name === skiNames[skiIndex]);
+                }
 
                 if (skiObject) {
                     // Apply Y-axis rotation
                     skiObject.rotation.y = rotation * (Math.PI / 180);
-                    console.log(`[HERO-4SKIS] Rotating ski ${skiIndex + 1} to ${rotation}°`);
+                    console.log(`[HERO-4SKIS] Rotating ${skiNames[skiIndex]} to ${rotation}°`);
+                } else {
+                    console.log(`[HERO-4SKIS] Could not find object: ${skiNames[skiIndex]}`);
+                    // Fallback: Try to send message to Spline
+                    sendSplineMessage(skiIndex, rotation);
                 }
             } else {
+                console.warn('[HERO-4SKIS] Spline app not accessible');
                 // Fallback: Try to send message to Spline
                 sendSplineMessage(skiIndex, rotation);
             }
@@ -266,10 +289,13 @@
 
     // Fallback: Send message to Spline (if API available)
     function sendSplineMessage(skiIndex, rotation) {
+        const skiNames = ['ALLMOUNTAIN', 'PARK', 'CARVE', 'POWDER'];
+
         // This would use Spline's postMessage API if available
         if (viewer.contentWindow) {
             viewer.contentWindow.postMessage({
                 type: 'rotateSki',
+                name: skiNames[skiIndex],
                 index: skiIndex,
                 rotation: rotation
             }, '*');
@@ -309,6 +335,8 @@
         },
 
         testRotation: (skiIndex, degrees) => {
+            const skiNames = ['ALLMOUNTAIN', 'PARK', 'CARVE', 'POWDER'];
+            console.log(`[HERO-4SKIS] Testing rotation for ${skiNames[skiIndex]} (${degrees}°)`);
             applyRotation(skiIndex, degrees);
             setTimeout(() => animateBackToOriginal(skiIndex), 1000);
         }
