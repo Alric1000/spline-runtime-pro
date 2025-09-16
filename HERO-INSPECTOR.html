@@ -1,0 +1,202 @@
+<!-- HERO SCENE - SIMPLE INSPECTOR -->
+<!-- Direct inspection of Spline scene structure -->
+
+<script>
+(function() {
+    const CLOUDFLARE_URL = 'https://spline-runtime-pro.pages.dev';
+    const HERO_SCENE = 'hero-animation';
+
+    console.log('[INSPECTOR] Starting scene inspector');
+
+    let viewer = null;
+    let splineApp = null;
+
+    // Wait for spline-viewer
+    function waitForSplineViewer() {
+        return new Promise((resolve) => {
+            const check = setInterval(() => {
+                if (customElements.get('spline-viewer')) {
+                    clearInterval(check);
+                    resolve();
+                }
+            }, 50);
+        });
+    }
+
+    // Create viewer
+    function createViewer(container) {
+        viewer = document.createElement('spline-viewer');
+        viewer.setAttribute('url', `${CLOUDFLARE_URL}/scenes/${HERO_SCENE}/scene.splinecode`);
+        viewer.style.width = '100%';
+        viewer.style.height = '100%';
+        viewer.style.display = 'block';
+
+        container.appendChild(viewer);
+
+        viewer.addEventListener('load', () => {
+            console.log('[INSPECTOR] Scene loaded');
+            setTimeout(inspect, 1500);
+        });
+    }
+
+    // Main inspection
+    function inspect() {
+        splineApp = viewer._spline;
+
+        if (!splineApp) {
+            console.log('[INSPECTOR] No spline app found, retrying...');
+            setTimeout(inspect, 500);
+            return;
+        }
+
+        console.log('[INSPECTOR] Found Spline app');
+
+        // Method 1: Get all objects
+        if (splineApp.getAllObjects) {
+            const objects = splineApp.getAllObjects();
+            console.log('[INSPECTOR] All objects from getAllObjects():');
+            objects.forEach((obj, i) => {
+                console.log(`  ${i}: "${obj.name}" (type: ${obj.type || 'unknown'})`);
+            });
+        }
+
+        // Method 2: Check scene structure
+        if (splineApp.scene) {
+            console.log('[INSPECTOR] Scene structure:');
+            console.log('Scene:', splineApp.scene);
+
+            if (splineApp.scene.children) {
+                console.log('[INSPECTOR] Scene.children:');
+                splineApp.scene.children.forEach((child, i) => {
+                    console.log(`  ${i}: "${child.name}" (type: ${child.type || child.constructor.name})`);
+
+                    // Check if child has children
+                    if (child.children && child.children.length > 0) {
+                        console.log(`     Has ${child.children.length} children:`);
+                        child.children.forEach((subchild, j) => {
+                            console.log(`       ${j}: "${subchild.name}"`);
+                        });
+                    }
+                });
+            }
+        }
+
+        // Method 3: Try to find specific objects
+        console.log('[INSPECTOR] Searching for ski-related objects:');
+
+        const searchTerms = ['CARVE', 'PARK', 'POWDER', 'ALLMOUNTAIN', 'ALL-MOUNTAIN', 'ALL MOUNTAIN',
+                            'Ski', 'ski', 'SKI', 'Group', 'group'];
+
+        searchTerms.forEach(term => {
+            if (splineApp.findObjectByName) {
+                const found = splineApp.findObjectByName(term);
+                if (found) {
+                    console.log(`  Found: "${term}" ->`, found);
+                }
+            }
+        });
+
+        // Method 4: Check what methods are available
+        console.log('[INSPECTOR] Available methods on splineApp:');
+        const methods = Object.getOwnPropertyNames(Object.getPrototypeOf(splineApp))
+            .filter(prop => typeof splineApp[prop] === 'function');
+        console.log(methods);
+    }
+
+    // Initialize
+    async function initialize() {
+        await waitForSplineViewer();
+
+        const container = document.querySelector('.spline-container') ||
+                         document.getElementById('hero-container');
+
+        if (!container) {
+            console.error('[INSPECTOR] No container found');
+            return;
+        }
+
+        createViewer(container);
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initialize);
+    } else {
+        setTimeout(initialize, 100);
+    }
+
+    // Global inspector
+    window.inspector = {
+        // Get the app
+        getApp: () => {
+            console.log('Spline app:', splineApp);
+            return splineApp;
+        },
+
+        // Get all object names
+        getNames: () => {
+            if (splineApp && splineApp.getAllObjects) {
+                const objects = splineApp.getAllObjects();
+                const names = objects.map(o => o.name);
+                console.log('All object names:', names);
+                return names;
+            }
+            return [];
+        },
+
+        // Find object by name
+        find: (name) => {
+            if (splineApp && splineApp.findObjectByName) {
+                const obj = splineApp.findObjectByName(name);
+                console.log(`Object "${name}":`, obj);
+                return obj;
+            }
+        },
+
+        // Get scene
+        getScene: () => {
+            if (splineApp) {
+                console.log('Scene:', splineApp.scene);
+                return splineApp.scene;
+            }
+        },
+
+        // Test rotation on object by name
+        rotate: (name, degrees) => {
+            if (!splineApp) {
+                console.log('App not ready');
+                return;
+            }
+
+            const obj = splineApp.findObjectByName(name);
+            if (obj) {
+                const radians = degrees * (Math.PI / 180);
+
+                if (obj.rotation) {
+                    obj.rotation.y = radians;
+                    console.log(`Rotated "${name}" to ${degrees}°`);
+                } else {
+                    console.log(`Object "${name}" has no rotation property`);
+                }
+            } else {
+                console.log(`Object "${name}" not found`);
+            }
+        },
+
+        // List children of an object
+        children: (name) => {
+            const obj = splineApp.findObjectByName(name);
+            if (obj && obj.children) {
+                console.log(`Children of "${name}":`);
+                obj.children.forEach((child, i) => {
+                    console.log(`  ${i}: ${child.name}`);
+                });
+            }
+        }
+    };
+
+    console.log('[INSPECTOR] Ready! Use: inspector.getNames(), inspector.find("name"), inspector.rotate("name", degrees)');
+})();
+</script>
+
+<!-- WEBFLOW HTML -->
+<div class="spline-container" id="hero-container"></div>

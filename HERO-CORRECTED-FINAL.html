@@ -1,0 +1,336 @@
+<!-- HERO SCENE - CORRECTED FINAL VERSION -->
+<!-- Fixed ski mapping, 90-degree default, and interaction zones -->
+
+<script>
+(function() {
+    const CLOUDFLARE_URL = 'https://spline-runtime-pro.pages.dev';
+    const HERO_SCENE = 'hero-animation';
+    const dpr = window.devicePixelRatio || 1;
+
+    console.log('[HERO-CORRECTED] Starting with correct ski mapping');
+
+    let viewer = null;
+    let splineApp = null;
+    let skiObjects = [];
+    let isInteracting = false;
+    let currentSki = null;
+    let startX = 0;
+    let startRotation = 0;
+    let animationFrame = null;
+
+    // DEFAULT ROTATION IS 90 DEGREES (converted to radians)
+    const DEFAULT_ROTATION = 90;
+    const DEFAULT_RADIANS = DEFAULT_ROTATION * (Math.PI / 180);
+
+    // Current rotations (start at 90 degrees)
+    let currentRotations = [DEFAULT_ROTATION, DEFAULT_ROTATION, DEFAULT_ROTATION, DEFAULT_ROTATION];
+
+    // CORRECT ski UUID mapping (left to right as displayed)
+    const SKI_MAPPING = [
+        { name: 'CARVE', uuid: 'c5d6f3ff-e0a8-42e3-8fa3-3ab4f6a6a82c', position: 0 },
+        { name: 'PARK', uuid: '731fbf35-4ab6-40a4-b7d0-22cd41b67649', position: 1 },
+        { name: 'ALLMOUNTAIN', uuid: '1057c6ec-57c0-4d4a-bdd0-00999322dd99', position: 2 },
+        { name: 'POWDER', uuid: '7bf4341d-f8b6-4b99-9ceb-f60a8670aad0', position: 3 }
+    ];
+
+    // Create viewer
+    function createViewer() {
+        const container = document.querySelector('.spline-container') ||
+                         document.getElementById('hero-container');
+
+        if (!container) {
+            console.error('[HERO-CORRECTED] No container found');
+            return;
+        }
+
+        viewer = document.createElement('spline-viewer');
+        viewer.setAttribute('url', `${CLOUDFLARE_URL}/scenes/${HERO_SCENE}/scene.splinecode`);
+        viewer.style.width = '100%';
+        viewer.style.height = '100%';
+        viewer.style.display = 'block';
+
+        container.appendChild(viewer);
+        console.log('[HERO-CORRECTED] Viewer created');
+
+        setTimeout(initializeScene, 2000);
+    }
+
+    // Initialize scene
+    function initializeScene() {
+        splineApp = viewer._spline;
+
+        if (!splineApp) {
+            console.log('[HERO-CORRECTED] App not ready, retrying...');
+            setTimeout(initializeScene, 500);
+            return;
+        }
+
+        console.log('[HERO-CORRECTED] App found! Setting up skis...');
+
+        // Get all objects
+        if (splineApp.getAllObjects) {
+            const allObjects = splineApp.getAllObjects();
+
+            // Find each ski by UUID and store in correct position
+            SKI_MAPPING.forEach((ski, index) => {
+                const obj = allObjects.find(o => o.uuid === ski.uuid);
+                if (obj) {
+                    skiObjects[index] = obj;
+                    console.log(`[HERO-CORRECTED] Position ${index + 1}: ${ski.name}`);
+                    console.log(`  UUID: ${ski.uuid}`);
+                    console.log(`  Object found: ${obj.name}`);
+
+                    // Set initial rotation to 90 degrees
+                    if (obj.rotation) {
+                        obj.rotation.y = DEFAULT_RADIANS;
+                    }
+                } else {
+                    console.warn(`[HERO-CORRECTED] ${ski.name} not found!`);
+                }
+            });
+
+            if (skiObjects.filter(o => o).length > 0) {
+                console.log(`[HERO-CORRECTED] ${skiObjects.filter(o => o).length} skis ready`);
+                fixQuality();
+                setupInteraction();
+            }
+        }
+    }
+
+    // Fix quality
+    function fixQuality() {
+        const canvas = viewer.shadowRoot?.querySelector('canvas') ||
+                      viewer.querySelector('canvas');
+
+        if (canvas) {
+            const rect = canvas.getBoundingClientRect();
+            const width = Math.floor(rect.width);
+            const height = Math.floor(rect.height);
+
+            canvas.width = width * dpr;
+            canvas.height = height * dpr;
+            canvas.style.width = width + 'px';
+            canvas.style.height = height + 'px';
+
+            console.log('[HERO-CORRECTED] Quality fixed');
+        }
+    }
+
+    // Setup interaction
+    function setupInteraction() {
+        const canvas = viewer.shadowRoot?.querySelector('canvas') ||
+                      viewer.querySelector('canvas');
+
+        if (!canvas) {
+            console.warn('[HERO-CORRECTED] Canvas not found');
+            return;
+        }
+
+        canvas.style.touchAction = 'none';
+        canvas.style.userSelect = 'none';
+        canvas.style.cursor = 'grab';
+
+        // Use canvas for all events to avoid dead zones
+        canvas.addEventListener('mousedown', handleStart);
+        canvas.addEventListener('mousemove', handleMove);
+        canvas.addEventListener('mouseup', handleEnd);
+        canvas.addEventListener('mouseleave', handleEnd);
+
+        canvas.addEventListener('touchstart', handleStart, { passive: false });
+        canvas.addEventListener('touchmove', handleMove, { passive: false });
+        canvas.addEventListener('touchend', handleEnd, { passive: false });
+        canvas.addEventListener('touchcancel', handleEnd, { passive: false });
+
+        console.log('[HERO-CORRECTED] Interaction ready!');
+        console.log('Zones: [0-25%: CARVE] [25-50%: PARK] [50-75%: ALLMOUNTAIN] [75-100%: POWDER]');
+    }
+
+    // Get ski from position (fixed zones)
+    function getSkiFromPosition(x, canvasWidth) {
+        const percentage = x / canvasWidth;
+
+        // Define clear zones for each ski
+        if (percentage < 0.25) return 0;      // CARVE (0-25%)
+        if (percentage < 0.50) return 1;      // PARK (25-50%)
+        if (percentage < 0.75) return 2;      // ALLMOUNTAIN (50-75%)
+        return 3;                              // POWDER (75-100%)
+    }
+
+    // Start interaction
+    function handleStart(e) {
+        if (!splineApp || skiObjects.length === 0) return;
+
+        e.preventDefault();
+
+        const canvas = e.target;
+        const rect = canvas.getBoundingClientRect();
+        const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+        const x = clientX - rect.left;
+
+        currentSki = getSkiFromPosition(x, rect.width);
+
+        if (skiObjects[currentSki]) {
+            isInteracting = true;
+            startX = clientX;
+            startRotation = currentRotations[currentSki];
+
+            canvas.style.cursor = 'grabbing';
+
+            const skiName = SKI_MAPPING[currentSki].name;
+            const percentage = ((x / rect.width) * 100).toFixed(0);
+            console.log(`[HERO-CORRECTED] Rotating ${skiName} (zone ${currentSki + 1}, ${percentage}% from left)`);
+        }
+    }
+
+    // Handle move
+    function handleMove(e) {
+        if (!isInteracting || currentSki === null || !skiObjects[currentSki]) return;
+
+        e.preventDefault();
+
+        const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+        const deltaX = clientX - startX;
+
+        // Calculate new rotation from start position
+        const rotation = startRotation + (deltaX * 0.5);
+        currentRotations[currentSki] = rotation;
+
+        applyRotation(currentSki, rotation);
+    }
+
+    // End interaction
+    function handleEnd(e) {
+        if (!isInteracting) return;
+
+        e.preventDefault();
+        isInteracting = false;
+
+        const canvas = e.target;
+        if (canvas) canvas.style.cursor = 'grab';
+
+        // Animate back to 90 degrees
+        if (currentSki !== null && skiObjects[currentSki]) {
+            animateBackToDefault(currentSki);
+        }
+
+        currentSki = null;
+    }
+
+    // Apply rotation
+    function applyRotation(skiIndex, degrees) {
+        const skiObject = skiObjects[skiIndex];
+        if (!skiObject || !skiObject.rotation) return;
+
+        const radians = degrees * (Math.PI / 180);
+        skiObject.rotation.y = radians;
+
+        // Force render
+        if (splineApp.renderer && splineApp.renderer.render) {
+            splineApp.renderer.render(splineApp.scene, splineApp.camera);
+        }
+    }
+
+    // Animate back to 90 degrees (not 0)
+    function animateBackToDefault(skiIndex) {
+        const startRotation = currentRotations[skiIndex];
+        const endRotation = DEFAULT_ROTATION; // 90 degrees
+        const duration = 500;
+        const startTime = Date.now();
+
+        function animate() {
+            const elapsed = Date.now() - startTime;
+            const progress = Math.min(elapsed / duration, 1);
+            const eased = 1 - Math.pow(1 - progress, 3);
+            const rotation = startRotation + (endRotation - startRotation) * eased;
+
+            currentRotations[skiIndex] = rotation;
+            applyRotation(skiIndex, rotation);
+
+            if (progress < 1) {
+                animationFrame = requestAnimationFrame(animate);
+            }
+        }
+
+        if (animationFrame) cancelAnimationFrame(animationFrame);
+        animate();
+    }
+
+    // Initialize
+    function initialize() {
+        if (!customElements.get('spline-viewer')) {
+            setTimeout(initialize, 100);
+            return;
+        }
+        createViewer();
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initialize);
+    } else {
+        setTimeout(initialize, 100);
+    }
+
+    // Debug commands
+    window.heroCorrected = {
+        status: () => {
+            console.log('[HERO-CORRECTED] Status:');
+            console.log('Ski positions (left to right):');
+            SKI_MAPPING.forEach((ski, i) => {
+                const obj = skiObjects[i];
+                console.log(`  ${i + 1}. ${ski.name}: ${obj ? '✅ Ready' : '❌ Missing'}`);
+            });
+            console.log('Current rotations:', currentRotations.map(r => r.toFixed(1) + '°'));
+        },
+
+        testSki: (index) => {
+            if (skiObjects[index]) {
+                console.log(`Testing ${SKI_MAPPING[index].name}...`);
+                applyRotation(index, 45);
+                setTimeout(() => animateBackToDefault(index), 1000);
+            } else {
+                console.log(`Ski ${index + 1} not found`);
+            }
+        },
+
+        resetAll: () => {
+            skiObjects.forEach((ski, i) => {
+                if (ski) {
+                    currentRotations[i] = DEFAULT_ROTATION;
+                    applyRotation(i, DEFAULT_ROTATION);
+                }
+            });
+            console.log('All skis reset to 90°');
+        },
+
+        showZones: () => {
+            console.log('Click zones (% from left):');
+            console.log('  0-25%: CARVE');
+            console.log('  25-50%: PARK');
+            console.log('  50-75%: ALLMOUNTAIN');
+            console.log('  75-100%: POWDER');
+        }
+    };
+
+    console.log('[HERO-CORRECTED] Commands: heroCorrected.status(), heroCorrected.showZones()');
+})();
+</script>
+
+<!-- STYLES -->
+<style>
+  .spline-container {
+    position: relative;
+    width: 100%;
+    height: 100%;
+  }
+
+  .spline-container *,
+  spline-viewer {
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+  }
+</style>
+
+<!-- WEBFLOW HTML -->
+<div class="spline-container" id="hero-container"></div>

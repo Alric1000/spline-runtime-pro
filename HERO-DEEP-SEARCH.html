@@ -1,0 +1,265 @@
+<!-- HERO SCENE - DEEP SEARCH FOR UUIDS -->
+<!-- Searches all possible object locations -->
+
+<script>
+(function() {
+    const CLOUDFLARE_URL = 'https://spline-runtime-pro.pages.dev';
+    const HERO_SCENE = 'hero-animation';
+
+    console.log('[DEEP-SEARCH] Starting deep search for objects...');
+
+    let viewer = null;
+    let splineApp = null;
+
+    function createViewer() {
+        const container = document.querySelector('.spline-container') ||
+                         document.getElementById('hero-container');
+
+        if (!container) {
+            console.error('[DEEP-SEARCH] No container found');
+            return;
+        }
+
+        viewer = document.createElement('spline-viewer');
+        viewer.setAttribute('url', `${CLOUDFLARE_URL}/scenes/${HERO_SCENE}/scene.splinecode`);
+        viewer.style.width = '100%';
+        viewer.style.height = '100%';
+        viewer.style.display = 'block';
+
+        container.appendChild(viewer);
+        console.log('[DEEP-SEARCH] Viewer created');
+
+        setTimeout(deepSearch, 2000);
+    }
+
+    function deepSearch() {
+        splineApp = viewer._spline;
+
+        if (!splineApp) {
+            console.log('[DEEP-SEARCH] App not ready, retrying...');
+            setTimeout(deepSearch, 500);
+            return;
+        }
+
+        console.log('[DEEP-SEARCH] === STARTING DEEP SEARCH ===\n');
+
+        // Method 1: Direct property search
+        console.log('[1] Searching viewer properties:');
+        for (let prop in viewer) {
+            if (prop.startsWith('_') && viewer[prop] && typeof viewer[prop] === 'object') {
+                console.log(`  viewer.${prop}:`, viewer[prop]);
+            }
+        }
+
+        // Method 2: Search splineApp properties
+        console.log('\n[2] Searching splineApp properties:');
+        for (let prop in splineApp) {
+            if (typeof splineApp[prop] === 'object' && splineApp[prop] !== null) {
+                if (prop !== 'scene' && prop !== 'renderer' && prop !== 'camera') {
+                    console.log(`  splineApp.${prop}:`, splineApp[prop]);
+                }
+            }
+        }
+
+        // Method 3: Scene exploration
+        console.log('\n[3] Scene structure:');
+        if (splineApp.scene) {
+            console.log('  splineApp.scene:', splineApp.scene);
+            console.log('  Scene type:', splineApp.scene.type || splineApp.scene.constructor.name);
+
+            if (splineApp.scene.children) {
+                console.log(`  Scene has ${splineApp.scene.children.length} children`);
+            }
+
+            // Try to traverse
+            traverseObject(splineApp.scene, '  ');
+        }
+
+        // Method 4: Try different find methods
+        console.log('\n[4] Testing find methods:');
+
+        const testUUID = 'c5d6f3ff-e0a8-42e3-8fa3-3ab4f6a6a82c';
+
+        // findObjectByName
+        if (splineApp.findObjectByName) {
+            const found = splineApp.findObjectByName(testUUID);
+            console.log(`  findObjectByName("${testUUID}"):`, found);
+        }
+
+        // findObjectById
+        if (splineApp.findObjectById) {
+            const found = splineApp.findObjectById(testUUID);
+            console.log(`  findObjectById("${testUUID}"):`, found);
+        }
+
+        // getObjectByName (THREE.js style)
+        if (splineApp.scene && splineApp.scene.getObjectByName) {
+            const found = splineApp.scene.getObjectByName(testUUID);
+            console.log(`  scene.getObjectByName("${testUUID}"):`, found);
+        }
+
+        // getObjectById (THREE.js style)
+        if (splineApp.scene && splineApp.scene.getObjectById) {
+            const found = splineApp.scene.getObjectById(testUUID);
+            console.log(`  scene.getObjectById("${testUUID}"):`, found);
+        }
+
+        // Method 5: Check for object maps
+        console.log('\n[5] Looking for object maps:');
+
+        // Common property names for object storage
+        const mapNames = ['objects', 'objectsById', 'objectsByName', '_objects', '_objectMap', 'objectMap', 'nodes', '_nodes'];
+
+        mapNames.forEach(name => {
+            if (splineApp[name]) {
+                console.log(`  Found splineApp.${name}:`, splineApp[name]);
+
+                // If it's a Map or object, try to get the UUID
+                if (splineApp[name] instanceof Map) {
+                    if (splineApp[name].has(testUUID)) {
+                        console.log(`    ✅ Contains ${testUUID}`);
+                    }
+                } else if (typeof splineApp[name] === 'object') {
+                    if (splineApp[name][testUUID]) {
+                        console.log(`    ✅ Contains ${testUUID}`);
+                    }
+                }
+            }
+        });
+
+        // Method 6: Check runtime exports
+        console.log('\n[6] Checking runtime exports:');
+        if (viewer._runtime && viewer._runtime.exports) {
+            console.log('  Runtime exports:', Object.keys(viewer._runtime.exports));
+
+            // Try to get scene from exports
+            if (viewer._runtime.exports.scene) {
+                console.log('  Exports.scene:', viewer._runtime.exports.scene);
+            }
+
+            if (viewer._runtime.exports.getSplineRuntime) {
+                const runtime = viewer._runtime.exports.getSplineRuntime();
+                console.log('  getSplineRuntime():', runtime);
+            }
+        }
+
+        console.log('\n[DEEP-SEARCH] === SEARCH COMPLETE ===');
+    }
+
+    // Traverse object tree
+    function traverseObject(obj, indent = '', depth = 0) {
+        if (!obj || depth > 3) return;
+
+        if (obj.children && Array.isArray(obj.children)) {
+            obj.children.forEach((child, i) => {
+                const name = child.name || child.id || 'unnamed';
+                const type = child.type || child.constructor.name;
+
+                console.log(`${indent}[${i}] ${name} (${type})`);
+
+                // Check if it's a UUID
+                if (/^[a-f0-9]{8}-[a-f0-9]{4}/.test(name)) {
+                    console.log(`${indent}    ⭐ UUID FOUND!`);
+                }
+
+                // Recurse
+                if (child.children && child.children.length > 0) {
+                    traverseObject(child, indent + '  ', depth + 1);
+                }
+            });
+        }
+    }
+
+    // Initialize
+    function initialize() {
+        if (!customElements.get('spline-viewer')) {
+            setTimeout(initialize, 100);
+            return;
+        }
+        createViewer();
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initialize);
+    } else {
+        setTimeout(initialize, 100);
+    }
+
+    // Debug commands
+    window.deepSearch = {
+        // Manual search for UUID
+        findUUID: (uuid) => {
+            if (!splineApp) {
+                console.log('App not ready');
+                return;
+            }
+
+            console.log(`Searching for ${uuid}...`);
+
+            // Try all methods
+            const methods = [
+                () => splineApp.findObjectByName?.(uuid),
+                () => splineApp.findObjectById?.(uuid),
+                () => splineApp.scene?.getObjectByName?.(uuid),
+                () => splineApp.scene?.getObjectById?.(uuid),
+                () => splineApp.getObjectByName?.(uuid),
+                () => splineApp.getObjectById?.(uuid)
+            ];
+
+            for (let i = 0; i < methods.length; i++) {
+                try {
+                    const result = methods[i]();
+                    if (result) {
+                        console.log(`✅ Found with method ${i}:`, result);
+                        return result;
+                    }
+                } catch (e) {}
+            }
+
+            console.log('❌ Not found with any method');
+        },
+
+        // Get app
+        getApp: () => {
+            console.log('SplineApp:', splineApp);
+            return splineApp;
+        },
+
+        // Try to access objects through viewer
+        getViewerObjects: () => {
+            console.log('Checking viewer for objects...');
+
+            // Check all properties
+            for (let prop in viewer) {
+                const value = viewer[prop];
+                if (value && typeof value === 'object') {
+                    // Check if it has the UUID
+                    if (value['c5d6f3ff-e0a8-42e3-8fa3-3ab4f6a6a82c']) {
+                        console.log(`✅ Found UUID in viewer.${prop}`);
+                    }
+
+                    // Check nested properties
+                    for (let subProp in value) {
+                        if (subProp === 'c5d6f3ff-e0a8-42e3-8fa3-3ab4f6a6a82c') {
+                            console.log(`✅ Found UUID in viewer.${prop}.${subProp}`);
+                        }
+                    }
+                }
+            }
+        },
+
+        // Manual traverse
+        traverse: () => {
+            if (splineApp && splineApp.scene) {
+                console.log('Traversing scene...');
+                traverseObject(splineApp.scene, '');
+            }
+        }
+    };
+
+    console.log('[DEEP-SEARCH] Commands: deepSearch.findUUID(uuid), deepSearch.getViewerObjects(), deepSearch.traverse()');
+})();
+</script>
+
+<!-- WEBFLOW HTML -->
+<div class="spline-container" id="hero-container"></div>

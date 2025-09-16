@@ -1,0 +1,261 @@
+<!-- HERO SCENE - WAIT AND INSPECT -->
+<!-- Better waiting and app detection -->
+
+<script>
+(function() {
+    const CLOUDFLARE_URL = 'https://spline-runtime-pro.pages.dev';
+    const HERO_SCENE = 'hero-animation';
+
+    console.log('[WAIT-INSPECTOR] Starting...');
+
+    let viewer = null;
+    let splineApp = null;
+    let checkCount = 0;
+
+    // Create viewer
+    function createViewer() {
+        const container = document.querySelector('.spline-container') ||
+                         document.getElementById('hero-container');
+
+        if (!container) {
+            console.error('[WAIT-INSPECTOR] No container found');
+            return;
+        }
+
+        viewer = document.createElement('spline-viewer');
+        viewer.setAttribute('url', `${CLOUDFLARE_URL}/scenes/${HERO_SCENE}/scene.splinecode`);
+        viewer.style.width = '100%';
+        viewer.style.height = '100%';
+        viewer.style.display = 'block';
+
+        container.appendChild(viewer);
+        console.log('[WAIT-INSPECTOR] Viewer created');
+
+        // Start checking for app
+        startAppCheck();
+    }
+
+    // Check for app availability
+    function startAppCheck() {
+        const interval = setInterval(() => {
+            checkCount++;
+            console.log(`[WAIT-INSPECTOR] Checking for app... attempt ${checkCount}`);
+
+            // Try to find the app
+            if (viewer._spline) {
+                splineApp = viewer._spline;
+                console.log('[WAIT-INSPECTOR] ✅ Found app at viewer._spline');
+                clearInterval(interval);
+                onAppReady();
+                return;
+            }
+
+            // Check other properties
+            const props = ['_runtime', '_application', 'spline', 'runtime', 'application'];
+            for (const prop of props) {
+                if (viewer[prop]) {
+                    splineApp = viewer[prop];
+                    console.log(`[WAIT-INSPECTOR] ✅ Found app at viewer.${prop}`);
+                    clearInterval(interval);
+                    onAppReady();
+                    return;
+                }
+            }
+
+            // Give up after 30 attempts (15 seconds)
+            if (checkCount > 30) {
+                console.error('[WAIT-INSPECTOR] ❌ Could not find app after 15 seconds');
+                clearInterval(interval);
+            }
+        }, 500);
+    }
+
+    // When app is ready
+    function onAppReady() {
+        console.log('[WAIT-INSPECTOR] App is ready! Analyzing...');
+
+        // Check if getAllObjects exists
+        if (splineApp.getAllObjects) {
+            const objects = splineApp.getAllObjects();
+            console.log(`[WAIT-INSPECTOR] Found ${objects.length} objects:`);
+
+            // Group objects by type
+            const byName = {};
+            objects.forEach(obj => {
+                const name = obj.name || 'unnamed';
+                if (!byName[name]) byName[name] = 0;
+                byName[name]++;
+            });
+
+            console.log('[WAIT-INSPECTOR] Object summary:');
+            Object.entries(byName).forEach(([name, count]) => {
+                console.log(`  "${name}": ${count} instance(s)`);
+            });
+
+            // List unique names
+            const uniqueNames = [...new Set(objects.map(o => o.name))];
+            console.log('[WAIT-INSPECTOR] Unique object names:', uniqueNames);
+
+            // Look for potential ski groups
+            console.log('[WAIT-INSPECTOR] Looking for ski-related objects:');
+            const skiRelated = uniqueNames.filter(name =>
+                name && (
+                    name.toUpperCase().includes('SKI') ||
+                    name.toUpperCase().includes('CARVE') ||
+                    name.toUpperCase().includes('PARK') ||
+                    name.toUpperCase().includes('POWDER') ||
+                    name.toUpperCase().includes('MOUNTAIN') ||
+                    name.toUpperCase().includes('GROUP')
+                )
+            );
+            console.log('[WAIT-INSPECTOR] Ski-related names:', skiRelated);
+
+        } else {
+            console.log('[WAIT-INSPECTOR] getAllObjects not available');
+        }
+
+        // Check scene structure
+        if (splineApp.scene) {
+            console.log('[WAIT-INSPECTOR] Scene exists');
+            if (splineApp.scene.children) {
+                console.log(`[WAIT-INSPECTOR] Scene has ${splineApp.scene.children.length} children`);
+            }
+        }
+
+        console.log('[WAIT-INSPECTOR] ✅ Ready to use inspector commands!');
+    }
+
+    // Initialize when DOM ready
+    function initialize() {
+        // Wait for custom element
+        if (!customElements.get('spline-viewer')) {
+            console.log('[WAIT-INSPECTOR] Waiting for spline-viewer element...');
+            setTimeout(initialize, 100);
+            return;
+        }
+
+        createViewer();
+    }
+
+    // Start
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initialize);
+    } else {
+        setTimeout(initialize, 100);
+    }
+
+    // Global inspector commands
+    window.inspector = {
+        // Check status
+        status: () => {
+            console.log('[INSPECTOR] Status:');
+            console.log('- Viewer:', !!viewer);
+            console.log('- App:', !!splineApp);
+            console.log('- Check count:', checkCount);
+
+            if (!splineApp) {
+                console.log('❌ App not ready yet. Wait for "Ready to use" message.');
+            } else {
+                console.log('✅ App is ready!');
+            }
+
+            return !!splineApp;
+        },
+
+        // Retry finding app
+        retry: () => {
+            checkCount = 0;
+            startAppCheck();
+        },
+
+        // Get all names
+        getNames: () => {
+            if (!splineApp) {
+                console.log('❌ App not ready. Use inspector.status() to check.');
+                return [];
+            }
+
+            if (splineApp.getAllObjects) {
+                const objects = splineApp.getAllObjects();
+                const names = [...new Set(objects.map(o => o.name))];
+                console.log('Unique names:', names);
+                return names;
+            }
+            return [];
+        },
+
+        // Find and inspect object
+        find: (name) => {
+            if (!splineApp) {
+                console.log('❌ App not ready. Use inspector.status() to check.');
+                return;
+            }
+
+            if (splineApp.findObjectByName) {
+                const obj = splineApp.findObjectByName(name);
+                if (obj) {
+                    console.log(`✅ Found "${name}":`, obj);
+                    console.log('Properties:', {
+                        name: obj.name,
+                        type: obj.type,
+                        hasRotation: !!obj.rotation,
+                        hasChildren: !!(obj.children && obj.children.length > 0),
+                        childCount: obj.children ? obj.children.length : 0
+                    });
+                    return obj;
+                } else {
+                    console.log(`❌ Object "${name}" not found`);
+                }
+            }
+        },
+
+        // Test rotation
+        rotate: (name, degrees) => {
+            if (!splineApp) {
+                console.log('❌ App not ready. Use inspector.status() to check.');
+                return;
+            }
+
+            const obj = splineApp.findObjectByName(name);
+            if (obj) {
+                if (obj.rotation) {
+                    obj.rotation.y = degrees * (Math.PI / 180);
+                    console.log(`✅ Rotated "${name}" to ${degrees}°`);
+                } else {
+                    console.log(`❌ Object "${name}" has no rotation property`);
+                }
+            } else {
+                console.log(`❌ Object "${name}" not found`);
+            }
+        },
+
+        // Get the app directly
+        getApp: () => {
+            if (splineApp) {
+                console.log('App:', splineApp);
+                return splineApp;
+            } else {
+                console.log('❌ App not ready');
+                return null;
+            }
+        },
+
+        // Manual check for app
+        checkApp: () => {
+            if (viewer && viewer._spline) {
+                splineApp = viewer._spline;
+                console.log('✅ Found app manually');
+                onAppReady();
+            } else {
+                console.log('❌ App not found. Try inspector.retry()');
+            }
+        }
+    };
+
+    console.log('[WAIT-INSPECTOR] Loading... Wait for "Ready to use" message.');
+    console.log('[WAIT-INSPECTOR] Commands: inspector.status(), inspector.getNames(), inspector.find("name")');
+})();
+</script>
+
+<!-- WEBFLOW HTML -->
+<div class="spline-container" id="hero-container"></div>

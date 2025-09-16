@@ -1,0 +1,248 @@
+<!-- HERO SCENE - DEEP EXPLORER -->
+<!-- Explores scene.children to find parent groups -->
+
+<script>
+(function() {
+    const CLOUDFLARE_URL = 'https://spline-runtime-pro.pages.dev';
+    const HERO_SCENE = 'hero-animation';
+
+    console.log('[EXPLORER] Starting deep scene exploration...');
+
+    let viewer = null;
+    let splineApp = null;
+
+    // Create viewer
+    function createViewer() {
+        const container = document.querySelector('.spline-container') ||
+                         document.getElementById('hero-container');
+
+        if (!container) {
+            console.error('[EXPLORER] No container found');
+            return;
+        }
+
+        viewer = document.createElement('spline-viewer');
+        viewer.setAttribute('url', `${CLOUDFLARE_URL}/scenes/${HERO_SCENE}/scene.splinecode`);
+        viewer.style.width = '100%';
+        viewer.style.height = '100%';
+        viewer.style.display = 'block';
+
+        container.appendChild(viewer);
+        console.log('[EXPLORER] Viewer created');
+
+        // Wait for load
+        setTimeout(checkForApp, 2000);
+    }
+
+    // Check for app
+    function checkForApp() {
+        splineApp = viewer._spline;
+
+        if (!splineApp) {
+            console.log('[EXPLORER] App not ready, retrying...');
+            setTimeout(checkForApp, 500);
+            return;
+        }
+
+        console.log('[EXPLORER] ✅ App found! Exploring scene...');
+        exploreScene();
+    }
+
+    // Deep exploration
+    function exploreScene() {
+        console.log('[EXPLORER] === SCENE EXPLORATION ===');
+
+        // Method 1: Check scene.children directly
+        if (splineApp.scene) {
+            console.log('[EXPLORER] Scene object:', splineApp.scene);
+
+            if (splineApp.scene.children) {
+                console.log(`[EXPLORER] Scene has ${splineApp.scene.children.length} direct children:`);
+
+                splineApp.scene.children.forEach((child, i) => {
+                    console.log(`\n[Child ${i}]: "${child.name || 'unnamed'}" (${child.type || child.constructor.name})`);
+
+                    // Check properties
+                    console.log(`  - Has rotation: ${!!child.rotation}`);
+                    console.log(`  - Has position: ${!!child.position}`);
+                    console.log(`  - Visible: ${child.visible !== false}`);
+
+                    // Check for nested children
+                    if (child.children && child.children.length > 0) {
+                        console.log(`  - Has ${child.children.length} children:`);
+                        child.children.forEach((subchild, j) => {
+                            console.log(`    [${j}]: "${subchild.name || 'unnamed'}"`);
+                        });
+                    }
+
+                    // Check if it's a group
+                    if (child.isGroup || child.type === 'Group' || child.constructor.name === 'Group') {
+                        console.log(`  ⭐ This is a GROUP!`);
+                    }
+                });
+            }
+        }
+
+        // Method 2: Try the normalmap objects as rotation targets
+        console.log('\n[EXPLORER] === TESTING ROTATION TARGETS ===');
+
+        const rotationTargets = [
+            'normalmap test 4 bake test 300x4000 MCP',      // Ski 1
+            'normalmap test 4 bake test 300x4000 MCP 4',    // Ski 2
+            'normalmap test 4 bake test 300x4000 MCP 3',    // Ski 3
+            'normalmap test 4 bake test 300x4000 MCP 2'     // Ski 4
+        ];
+
+        rotationTargets.forEach((name, i) => {
+            const obj = splineApp.findObjectByName(name);
+            if (obj) {
+                console.log(`\nSki ${i + 1}: "${name}"`);
+                console.log(`  - Has rotation: ${!!obj.rotation}`);
+
+                // Check parent
+                if (obj.parent) {
+                    console.log(`  - Parent: "${obj.parent.name || 'unnamed'}" (${obj.parent.type || obj.parent.constructor.name})`);
+
+                    // Check if parent is rotatable
+                    if (obj.parent.rotation) {
+                        console.log(`  - ⭐ Parent is ROTATABLE!`);
+                    }
+                }
+            }
+        });
+
+        console.log('\n[EXPLORER] === EXPLORATION COMPLETE ===');
+        console.log('[EXPLORER] Use explorer commands to test rotation');
+    }
+
+    // Initialize
+    function initialize() {
+        if (!customElements.get('spline-viewer')) {
+            setTimeout(initialize, 100);
+            return;
+        }
+        createViewer();
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initialize);
+    } else {
+        setTimeout(initialize, 100);
+    }
+
+    // Explorer commands
+    window.explorer = {
+        // Get scene children
+        getChildren: () => {
+            if (!splineApp) {
+                console.log('❌ App not ready');
+                return;
+            }
+
+            if (splineApp.scene && splineApp.scene.children) {
+                const children = splineApp.scene.children;
+                console.log('Scene children:');
+                children.forEach((child, i) => {
+                    console.log(`${i}: ${child.name || 'unnamed'} (${child.type || child.constructor.name})`);
+                });
+                return children;
+            }
+        },
+
+        // Test rotating a normalmap object
+        rotateNormalmap: (index, degrees) => {
+            if (!splineApp) {
+                console.log('❌ App not ready');
+                return;
+            }
+
+            const names = [
+                'normalmap test 4 bake test 300x4000 MCP',
+                'normalmap test 4 bake test 300x4000 MCP 4',
+                'normalmap test 4 bake test 300x4000 MCP 3',
+                'normalmap test 4 bake test 300x4000 MCP 2'
+            ];
+
+            const obj = splineApp.findObjectByName(names[index]);
+            if (obj) {
+                if (obj.rotation) {
+                    obj.rotation.y = degrees * (Math.PI / 180);
+                    console.log(`✅ Rotated ski ${index + 1} to ${degrees}°`);
+                } else {
+                    console.log(`❌ Object has no rotation`);
+                }
+            }
+        },
+
+        // Test rotating parent of normalmap object
+        rotateParent: (index, degrees) => {
+            if (!splineApp) {
+                console.log('❌ App not ready');
+                return;
+            }
+
+            const names = [
+                'normalmap test 4 bake test 300x4000 MCP',
+                'normalmap test 4 bake test 300x4000 MCP 4',
+                'normalmap test 4 bake test 300x4000 MCP 3',
+                'normalmap test 4 bake test 300x4000 MCP 2'
+            ];
+
+            const obj = splineApp.findObjectByName(names[index]);
+            if (obj && obj.parent) {
+                if (obj.parent.rotation) {
+                    obj.parent.rotation.y = degrees * (Math.PI / 180);
+                    console.log(`✅ Rotated parent of ski ${index + 1} to ${degrees}°`);
+                } else {
+                    console.log(`❌ Parent has no rotation`);
+                }
+            }
+        },
+
+        // Get parent of an object
+        getParent: (name) => {
+            if (!splineApp) {
+                console.log('❌ App not ready');
+                return;
+            }
+
+            const obj = splineApp.findObjectByName(name);
+            if (obj && obj.parent) {
+                console.log(`Parent of "${name}":`, obj.parent);
+                console.log(`Parent name: "${obj.parent.name || 'unnamed'}"`);
+                console.log(`Parent type: ${obj.parent.type || obj.parent.constructor.name}`);
+                return obj.parent;
+            }
+        },
+
+        // Try rotating scene children directly
+        rotateChild: (index, degrees) => {
+            if (!splineApp || !splineApp.scene) {
+                console.log('❌ App/scene not ready');
+                return;
+            }
+
+            const child = splineApp.scene.children[index];
+            if (child) {
+                if (child.rotation) {
+                    child.rotation.y = degrees * (Math.PI / 180);
+                    console.log(`✅ Rotated child ${index} ("${child.name}") to ${degrees}°`);
+                } else {
+                    console.log(`❌ Child ${index} has no rotation`);
+                }
+            } else {
+                console.log(`❌ No child at index ${index}`);
+            }
+        }
+    };
+
+    console.log('[EXPLORER] Commands:');
+    console.log('  explorer.getChildren() - List scene children');
+    console.log('  explorer.rotateNormalmap(0-3, degrees) - Rotate ski by index');
+    console.log('  explorer.rotateParent(0-3, degrees) - Rotate parent of ski');
+    console.log('  explorer.rotateChild(index, degrees) - Rotate scene child directly');
+})();
+</script>
+
+<!-- WEBFLOW HTML -->
+<div class="spline-container" id="hero-container"></div>
