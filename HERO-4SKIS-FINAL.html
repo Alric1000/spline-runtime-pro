@@ -1,0 +1,450 @@
+<!-- HERO 4-SKIS FINAL - Working rotation with mouse/touch -->
+
+<script async src="https://cdn.jsdelivr.net/npm/@finsweet/cookie-consent@1/fs-cc.js" fs-cc-mode="opt-in"></script>
+
+<script>
+(function() {
+    const CLOUDFLARE_URL = 'https://spline-runtime-pro.pages.dev';
+    const HERO_SCENE = 'hero-animation';
+    const dpr = window.devicePixelRatio || 1;
+
+    console.log('[HERO-FINAL] Initializing with working rotation');
+
+    let viewer = null;
+    let splineApp = null;
+    let skiObjects = [];
+    let canvas = null;
+    let isReady = false;
+
+    // Interaction state
+    let isInteracting = false;
+    let currentSkiIndex = null;
+    let startX = 0;
+    let startRotation = 0;
+    let originalRotations = [];
+
+    // Ski object names from your scene
+    const SKI_OBJECT_NAMES = [
+        'normalmap test 4 bake test 300x4000 MCP',      // ALLMOUNTAIN
+        'normalmap test 4 bake test 300x4000 MCP 2',    // PARK
+        'normalmap test 4 bake test 300x4000 MCP 3',    // CARVE
+        'normalmap test 4 bake test 300x4000 MCP 4'     // POWDER
+    ];
+
+    const SKI_LABELS = ['ALLMOUNTAIN', 'PARK', 'CARVE', 'POWDER'];
+
+    // Wait for spline-viewer
+    function waitForSplineViewer() {
+        return new Promise((resolve) => {
+            const check = setInterval(() => {
+                if (customElements.get('spline-viewer')) {
+                    clearInterval(check);
+                    resolve();
+                }
+            }, 50);
+        });
+    }
+
+    // Create viewer
+    function createHeroViewer(container) {
+        viewer = document.createElement('spline-viewer');
+        viewer.setAttribute('url', `${CLOUDFLARE_URL}/scenes/${HERO_SCENE}/scene.splinecode`);
+        viewer.setAttribute('id', 'hero-viewer');
+        viewer.style.width = '100%';
+        viewer.style.height = '100%';
+        viewer.style.display = 'block';
+
+        // Disable Spline's default mouse controls
+        viewer.setAttribute('mouse-controls', 'false');
+
+        container.appendChild(viewer);
+
+        // Setup load handlers
+        viewer.addEventListener('load', onSplineLoad);
+        viewer.addEventListener('ready', onSplineLoad);
+
+        // Periodic check for app access
+        const checkInterval = setInterval(() => {
+            if (tryAccessSplineApp()) {
+                clearInterval(checkInterval);
+                if (!isReady) {
+                    setupScene();
+                }
+            }
+        }, 500);
+
+        // Timeout after 15 seconds
+        setTimeout(() => clearInterval(checkInterval), 15000);
+
+        return viewer;
+    }
+
+    // Handle Spline load
+    function onSplineLoad() {
+        console.log('[HERO-FINAL] Spline load event');
+
+        setTimeout(() => {
+            if (tryAccessSplineApp() && !isReady) {
+                setupScene();
+            }
+        }, 500);
+    }
+
+    // Access Spline app
+    function tryAccessSplineApp() {
+        if (splineApp && skiObjects.length === 4) return true;
+
+        const attempts = [
+            () => viewer._application,
+            () => viewer.application,
+            () => viewer._app,
+            () => viewer.spline,
+            () => window.splineApp
+        ];
+
+        for (const attempt of attempts) {
+            try {
+                const app = attempt();
+                if (app) {
+                    splineApp = app;
+                    window.splineApp = app;
+                    console.log('[HERO-FINAL] Spline app connected');
+                    return true;
+                }
+            } catch (e) {}
+        }
+
+        return false;
+    }
+
+    // Setup scene and find objects
+    function setupScene() {
+        if (isReady) return;
+
+        console.log('[HERO-FINAL] Setting up scene');
+
+        // Find ski objects
+        if (findSkiObjects()) {
+            // Setup interaction
+            setupInteraction();
+
+            // Fix quality
+            fixQuality();
+
+            isReady = true;
+            console.log('[HERO-FINAL] Scene ready for interaction');
+        }
+    }
+
+    // Find ski objects
+    function findSkiObjects() {
+        if (!splineApp || !splineApp.getAllObjects) return false;
+
+        console.log('[HERO-FINAL] Finding ski objects...');
+
+        const allObjects = splineApp.getAllObjects();
+        skiObjects = [];
+        originalRotations = [];
+
+        for (let i = 0; i < SKI_OBJECT_NAMES.length; i++) {
+            const obj = allObjects.find(o => o.name === SKI_OBJECT_NAMES[i]);
+
+            if (obj) {
+                skiObjects[i] = obj;
+                // Store original Y rotation
+                originalRotations[i] = obj.rotation._y || obj.rotation.y || 0;
+                console.log(`[HERO-FINAL] Found ${SKI_LABELS[i]}`);
+            } else {
+                console.warn(`[HERO-FINAL] Missing ${SKI_LABELS[i]}`);
+                return false;
+            }
+        }
+
+        console.log('[HERO-FINAL] All 4 ski objects found');
+        return true;
+    }
+
+    // Fix canvas quality
+    function fixQuality() {
+        setTimeout(() => {
+            const c = viewer.shadowRoot?.querySelector('canvas') ||
+                     viewer.querySelector('canvas');
+
+            if (c) {
+                const rect = c.getBoundingClientRect();
+                const width = Math.floor(rect.width);
+                const height = Math.floor(rect.height);
+
+                c.width = width * dpr;
+                c.height = height * dpr;
+                c.style.width = width + 'px';
+                c.style.height = height + 'px';
+
+                console.log('[HERO-FINAL] Canvas quality fixed');
+            }
+        }, 500);
+    }
+
+    // Setup interaction handlers
+    function setupInteraction() {
+        // Find canvas
+        canvas = viewer.shadowRoot?.querySelector('canvas') ||
+                 viewer.querySelector('canvas');
+
+        if (!canvas) {
+            console.warn('[HERO-FINAL] Canvas not found, retrying...');
+            setTimeout(setupInteraction, 500);
+            return;
+        }
+
+        console.log('[HERO-FINAL] Setting up interaction handlers');
+
+        // Style for interaction
+        canvas.style.touchAction = 'none';
+        canvas.style.userSelect = 'none';
+        canvas.style.webkitUserSelect = 'none';
+        canvas.style.cursor = 'grab';
+
+        // Remove any existing listeners
+        canvas.removeEventListener('mousedown', handleStart);
+        canvas.removeEventListener('touchstart', handleStart);
+
+        // Add fresh listeners
+        // Mouse events
+        canvas.addEventListener('mousedown', handleStart);
+        canvas.addEventListener('mousemove', handleMove);
+        canvas.addEventListener('mouseup', handleEnd);
+        canvas.addEventListener('mouseleave', handleEnd);
+
+        // Touch events
+        canvas.addEventListener('touchstart', handleStart, { passive: false });
+        canvas.addEventListener('touchmove', handleMove, { passive: false });
+        canvas.addEventListener('touchend', handleEnd, { passive: false });
+        canvas.addEventListener('touchcancel', handleEnd, { passive: false });
+
+        console.log('[HERO-FINAL] Interaction handlers attached');
+    }
+
+    // Determine ski index from X position
+    function getSkiIndexFromX(x, canvasWidth) {
+        // Divide canvas into 4 equal zones
+        const zone = Math.floor((x / canvasWidth) * 4);
+        return Math.min(Math.max(zone, 0), 3);
+    }
+
+    // Handle interaction start
+    function handleStart(e) {
+        if (!isReady || !skiObjects.length) {
+            console.warn('[HERO-FINAL] Not ready for interaction');
+            return;
+        }
+
+        e.preventDefault();
+        e.stopPropagation();
+
+        const rect = canvas.getBoundingClientRect();
+        const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+        const x = clientX - rect.left;
+
+        currentSkiIndex = getSkiIndexFromX(x, rect.width);
+
+        if (!skiObjects[currentSkiIndex]) {
+            console.warn('[HERO-FINAL] No ski object at index', currentSkiIndex);
+            return;
+        }
+
+        isInteracting = true;
+        startX = clientX;
+        startRotation = skiObjects[currentSkiIndex].rotation._y || skiObjects[currentSkiIndex].rotation.y || 0;
+
+        canvas.style.cursor = 'grabbing';
+
+        console.log(`[HERO-FINAL] Started interaction with ${SKI_LABELS[currentSkiIndex]}`);
+    }
+
+    // Handle interaction move
+    function handleMove(e) {
+        if (!isInteracting || currentSkiIndex === null) return;
+        if (!skiObjects[currentSkiIndex]) return;
+
+        e.preventDefault();
+        e.stopPropagation();
+
+        const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+        const deltaX = clientX - startX;
+
+        // Calculate rotation (sensitivity factor)
+        const rotationDelta = deltaX * 0.01; // Radians
+        const newRotation = startRotation + rotationDelta;
+
+        // Apply rotation
+        applyRotation(currentSkiIndex, newRotation);
+    }
+
+    // Handle interaction end
+    function handleEnd(e) {
+        if (!isInteracting) return;
+
+        e.preventDefault();
+        e.stopPropagation();
+
+        isInteracting = false;
+
+        // Animate back to original position
+        if (currentSkiIndex !== null && skiObjects[currentSkiIndex]) {
+            animateToOriginal(currentSkiIndex);
+        }
+
+        canvas.style.cursor = 'grab';
+
+        console.log(`[HERO-FINAL] Ended interaction with ${SKI_LABELS[currentSkiIndex] || 'ski'}`);
+
+        currentSkiIndex = null;
+    }
+
+    // Apply rotation to ski
+    function applyRotation(index, rotationRad) {
+        const obj = skiObjects[index];
+        if (!obj || !obj.rotation) return;
+
+        try {
+            // Set Y rotation (Euler angle)
+            if (obj.rotation._y !== undefined) {
+                obj.rotation._y = rotationRad;
+            } else if (obj.rotation.y !== undefined) {
+                obj.rotation.y = rotationRad;
+            }
+
+            // Force render update
+            if (splineApp.render) {
+                splineApp.render();
+            }
+
+            // Debug log (comment out for production)
+            // console.log(`[HERO-FINAL] Rotating ${SKI_LABELS[index]} to ${(rotationRad * 180 / Math.PI).toFixed(1)}°`);
+
+        } catch (e) {
+            console.error('[HERO-FINAL] Rotation error:', e);
+        }
+    }
+
+    // Animate back to original position
+    function animateToOriginal(index) {
+        const obj = skiObjects[index];
+        if (!obj) return;
+
+        const currentRot = obj.rotation._y || obj.rotation.y || 0;
+        const targetRot = originalRotations[index];
+        const duration = 500; // ms
+        const startTime = performance.now();
+
+        function animate() {
+            const elapsed = performance.now() - startTime;
+            const progress = Math.min(elapsed / duration, 1);
+
+            // Ease-out cubic
+            const eased = 1 - Math.pow(1 - progress, 3);
+
+            const rotation = currentRot + (targetRot - currentRot) * eased;
+            applyRotation(index, rotation);
+
+            if (progress < 1) {
+                requestAnimationFrame(animate);
+            }
+        }
+
+        animate();
+    }
+
+    // Initialize
+    async function initialize() {
+        await waitForSplineViewer();
+
+        const container = document.querySelector('.spline-container, .hero-container, #hero-container');
+
+        if (!container) {
+            console.error('[HERO-FINAL] No container found');
+            return;
+        }
+
+        createHeroViewer(container);
+
+        console.log('[HERO-FINAL] Viewer created, waiting for Spline to load...');
+    }
+
+    // Start when ready
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initialize);
+    } else {
+        setTimeout(initialize, 100);
+    }
+
+    // Public API for testing
+    window.hero4Skis = {
+        status: () => {
+            console.log('[HERO-FINAL] Status:');
+            console.log('  Ready:', isReady);
+            console.log('  Spline App:', splineApp ? 'connected' : 'not connected');
+            console.log('  Ski Objects:', skiObjects.filter(Boolean).length + '/4 found');
+            console.log('  Canvas:', canvas ? 'found' : 'not found');
+            console.log('  Interaction:', isInteracting ? 'active' : 'idle');
+        },
+
+        testRotation: (skiName, degrees) => {
+            let index = skiName;
+
+            // Allow name or index
+            if (typeof skiName === 'string') {
+                index = SKI_LABELS.indexOf(skiName.toUpperCase());
+                if (index === -1) {
+                    console.error('[HERO-FINAL] Invalid ski. Use:', SKI_LABELS.join(', '));
+                    return;
+                }
+            }
+
+            if (!skiObjects[index]) {
+                console.error('[HERO-FINAL] Ski not found:', SKI_LABELS[index]);
+                return;
+            }
+
+            const radians = degrees * (Math.PI / 180);
+            console.log(`[HERO-FINAL] Testing ${SKI_LABELS[index]} rotation to ${degrees}°`);
+
+            applyRotation(index, radians);
+
+            // Return to original after 1 second
+            setTimeout(() => animateToOriginal(index), 1000);
+        },
+
+        debug: (enable = true) => {
+            if (enable) {
+                console.log('[HERO-FINAL] Debug mode enabled');
+                // Add visual feedback
+                if (canvas) {
+                    canvas.style.border = '2px solid red';
+                }
+            } else {
+                if (canvas) {
+                    canvas.style.border = 'none';
+                }
+            }
+        }
+    };
+
+    console.log('[HERO-FINAL] Ready. Commands:');
+    console.log('  hero4Skis.status()');
+    console.log('  hero4Skis.testRotation("ALLMOUNTAIN", 45)');
+    console.log('  hero4Skis.debug()');
+})();
+</script>
+
+<!-- WEBFLOW SETUP -->
+<!--
+In Webflow, create a container:
+
+<div class="hero-container" id="hero-container"></div>
+
+Or:
+
+<div class="spline-container" id="hero-container"></div>
+-->
