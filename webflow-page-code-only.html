@@ -101,7 +101,13 @@ document.addEventListener('DOMContentLoaded', function() {
     window.__textControl = {
         setMouseDragging: (state) => { isMouseDragging = state; },
         setText: (text) => { if (span) span.textContent = text; },
-        getDefaultText: () => defaultText
+        getDefaultText: () => defaultText,
+        setDefaultText: (text) => { 
+            defaultText = text; 
+            if (span && !activeTextTouch && !isMouseDragging) {
+                span.textContent = text;
+            }
+        }
     };
 });
 </script>
@@ -186,9 +192,11 @@ document.addEventListener('DOMContentLoaded', function() {
             try {
                 // Create viewer with full interactions
                 const viewer = document.createElement('spline-viewer');
+                // Add cache busting timestamp
+                const timestamp = Date.now();
                 const sceneUrl = sceneType === 'hero' 
-                    ? `${CLOUDFLARE_URL}/scenes/hero-animation/scene.splinecode`
-                    : `${CLOUDFLARE_URL}/scenes/hero-collab/scene.splinecode`;
+                    ? `${CLOUDFLARE_URL}/scenes/hero-animation/scene.splinecode?v=${timestamp}`
+                    : `${CLOUDFLARE_URL}/scenes/hero-colab/scene.splinecode?v=${timestamp}`;
                 
                 viewer.setAttribute('url', sceneUrl);
                 viewer.style.width = '100%';
@@ -241,7 +249,7 @@ document.addEventListener('DOMContentLoaded', function() {
             if (!collabContainer) {
                 console.warn('[COLLAB] No .hero-colab-scene container found - scene will not load');
                 // Try alternative selectors
-                const alternatives = ['.hero_colab_scene', '[data-scene="collab"]', '.spline-collab'];
+                const alternatives = ['.hero_colab_scene', '[data-scene="colab"]', '.spline-colab'];
                 for (const selector of alternatives) {
                     const altContainer = document.querySelector(selector);
                     if (altContainer) {
@@ -387,13 +395,19 @@ document.addEventListener('DOMContentLoaded', function() {
             console.log('[HOME] Rotation enabled with gesture detection');
         }
 
+        // Ski URL mapping
+        const SKI_URLS = [
+            'https://1000skis.webflow.io/product/carve',      // CARVE
+            'https://1000skis.webflow.io/product/park',       // PARK  
+            'https://1000skis.webflow.io/product/allmountain', // ALLMOUNTAIN
+            'https://1000skis.webflow.io/product/powder'      // POWDER
+        ];
+
         // MOUSE HANDLING
         function handleMouseDown(e) {
             if (!splineApp || skiObjects.length === 0) return;
 
-            // Prevent event from bubbling to parent link
             e.preventDefault();
-            e.stopPropagation();
 
             const zone = e.currentTarget;
             const skiIndex = parseInt(zone.dataset.ski);
@@ -415,22 +429,10 @@ document.addEventListener('DOMContentLoaded', function() {
                     gestureDecided: false,
                     clickTarget: e.target,
                     skiType: skiType,
-                    startTime: Date.now(),
-                    quickClickTimeout: setTimeout(() => {
-                        // If no drag after 200ms, allow navigation
-                        if (mouseDownData && !mouseDownData.gestureDecided) {
-                            console.log('[HOME] Quick click detected - triggering parent link');
-                            // Find the parent link and click it
-                            const parentLink = zone.closest('a, .w-inline-block');
-                            if (parentLink && parentLink.href) {
-                                parentLink.click();
-                            }
-                            mouseDownData = null;
-                        }
-                    }, 200)
+                    targetUrl: SKI_URLS[skiIndex]
                 };
 
-                console.log(`[HOME] Mouse down on ski ${skiIndex} - waiting to detect intention`);
+                console.log(`[HOME] Mouse down on ski ${skiIndex} (${skiType})`);
             }
         }
 
@@ -480,12 +482,6 @@ document.addEventListener('DOMContentLoaded', function() {
         function handleMouseUp(e) {
             if (!mouseDownData) return;
 
-            // Clear timeout if still pending
-            if (mouseDownData.quickClickTimeout) {
-                clearTimeout(mouseDownData.quickClickTimeout);
-                mouseDownData.quickClickTimeout = null;
-            }
-
             if (window.__textControl) {
                 window.__textControl.setMouseDragging(false);
                 const hoveredZone = document.elementFromPoint(e.clientX, e.clientY);
@@ -503,6 +499,12 @@ document.addEventListener('DOMContentLoaded', function() {
                 e.stopPropagation();
                 animateBackToDefault(mouseDownData.skiIndex);
                 console.log('[HOME] Rotation ended');
+            } else if (!mouseDownData.gestureDecided) {
+                // Quick click detected - navigate to ski page
+                if (mouseDownData.targetUrl) {
+                    console.log(`[HOME] Quick click - navigating to ${mouseDownData.skiType} page`);
+                    window.location.href = mouseDownData.targetUrl;
+                }
             }
 
             mouseDownData = null;
@@ -512,14 +514,12 @@ document.addEventListener('DOMContentLoaded', function() {
         function handleTouchStart(e) {
             if (!splineApp || skiObjects.length === 0) return;
 
-            // Prevent event from bubbling to parent link
-            e.preventDefault();
-            e.stopPropagation();
-
             const zone = e.currentTarget;
             const skiIndex = parseInt(zone.dataset.ski);
 
             if (!isNaN(skiIndex) && skiObjects[skiIndex]) {
+                const skiType = zone.getAttribute('data-type');
+                
                 activeTouch = {
                     skiIndex: skiIndex,
                     startX: e.touches[0].clientX,
@@ -529,23 +529,10 @@ document.addEventListener('DOMContentLoaded', function() {
                     blockScroll: false,
                     gestureDecided: false,
                     touchId: e.touches[0].identifier,
-                    startTime: Date.now(),
-                    touchTarget: e.target,
-                    quickTapTimeout: setTimeout(() => {
-                        // If no drag after 200ms, allow navigation
-                        if (activeTouch && !activeTouch.gestureDecided) {
-                            console.log('[HOME] Quick tap detected - triggering parent link');
-                            // Find the parent link and click it
-                            const parentLink = zone.closest('a, .w-inline-block');
-                            if (parentLink && parentLink.href) {
-                                parentLink.click();
-                            }
-                            activeTouch = null;
-                        }
-                    }, 200)
+                    targetUrl: SKI_URLS[skiIndex]
                 };
 
-                console.log(`[HOME] Touch start on ski ${skiIndex} - waiting to detect intention`);
+                console.log(`[HOME] Touch start on ski ${skiIndex} (${skiType})`);
             }
         }
 
@@ -598,12 +585,6 @@ document.addEventListener('DOMContentLoaded', function() {
             const touch = Array.from(e.changedTouches).find(t => t.identifier === activeTouch.touchId);
             if (!touch) return;
 
-            // Clear timeout if still pending
-            if (activeTouch.quickTapTimeout) {
-                clearTimeout(activeTouch.quickTapTimeout);
-                activeTouch.quickTapTimeout = null;
-            }
-
             if (activeTouch.isRotating) {
                 if (activeTouch.blockScroll) {
                     e.preventDefault();
@@ -611,6 +592,12 @@ document.addEventListener('DOMContentLoaded', function() {
                 }
                 animateBackToDefault(activeTouch.skiIndex);
                 console.log('[HOME] Touch ended - animating back');
+            } else if (!activeTouch.gestureDecided) {
+                // Quick tap detected - navigate to ski page
+                if (activeTouch.targetUrl) {
+                    console.log(`[HOME] Quick tap - navigating to ski page`);
+                    window.location.href = activeTouch.targetUrl;
+                }
             }
 
             activeTouch = null;
@@ -714,6 +701,13 @@ document.addEventListener('DOMContentLoaded', function() {
             { name: 'SOFTTIE', uuid: '6cd8539d-d7bd-4aa2-a1b6-684f7a5e22d0' }
         ];
 
+        // Collab URL mapping
+        const COLLAB_URLS = [
+            'https://1000skis.webflow.io/product/chimi-sunglasses',  // SHADES
+            'https://1000skis.webflow.io/product/chimi-goggles',     // GOGGLES
+            'https://1000skis.webflow.io/product/capeesh-belt'       // SOFTTIE (assuming this maps to belt)
+        ];
+
         function initializeScene() {
             splineApp = viewer._spline;
 
@@ -779,9 +773,7 @@ document.addEventListener('DOMContentLoaded', function() {
         function handleMouseDown(e) {
             if (!splineApp || collabObjects.length === 0) return;
 
-            // Prevent event from bubbling to parent link
             e.preventDefault();
-            e.stopPropagation();
 
             const zone = e.currentTarget;
             const collabIndex = parseInt(zone.dataset.collab);
@@ -801,24 +793,12 @@ document.addEventListener('DOMContentLoaded', function() {
                     isDragging: false,
                     isVerticalScroll: false,
                     gestureDecided: false,
-                    clickTarget: clickTarget,
+                    clickTarget: e.target,
                     collabType: collabType,
-                    startTime: Date.now(),
-                    quickClickTimeout: setTimeout(() => {
-                        // If no drag after 200ms, allow navigation
-                        if (mouseDownData && !mouseDownData.gestureDecided) {
-                            console.log('[COLLAB] Quick click detected - triggering parent link');
-                            // Find the parent link and click it
-                            const parentLink = zone.closest('a, .w-inline-block');
-                            if (parentLink && parentLink.href) {
-                                parentLink.click();
-                            }
-                            mouseDownData = null;
-                        }
-                    }, 200)
+                    targetUrl: COLLAB_URLS[collabIndex]
                 };
 
-                console.log(`[COLLAB] Mouse down on product ${collabIndex} - preparing for potential drag`);
+                console.log(`[COLLAB] Mouse down on product ${collabIndex} (${collabType})`);
             }
         }
 
@@ -868,12 +848,6 @@ document.addEventListener('DOMContentLoaded', function() {
         function handleMouseUp(e) {
             if (!mouseDownData) return;
 
-            // Clear timeout if still pending
-            if (mouseDownData.quickClickTimeout) {
-                clearTimeout(mouseDownData.quickClickTimeout);
-                mouseDownData.quickClickTimeout = null;
-            }
-
             if (window.__textControl) {
                 window.__textControl.setMouseDragging(false);
                 const hoveredZone = document.elementFromPoint(e.clientX, e.clientY);
@@ -891,6 +865,12 @@ document.addEventListener('DOMContentLoaded', function() {
                 e.stopPropagation();
                 animateBackToDefault(mouseDownData.collabIndex);
                 console.log('[COLLAB] Rotation ended');
+            } else if (!mouseDownData.gestureDecided) {
+                // Quick click detected - navigate to collab page
+                if (mouseDownData.targetUrl) {
+                    console.log(`[COLLAB] Quick click - navigating to ${mouseDownData.collabType} page`);
+                    window.location.href = mouseDownData.targetUrl;
+                }
             }
 
             mouseDownData = null;
@@ -900,14 +880,12 @@ document.addEventListener('DOMContentLoaded', function() {
         function handleTouchStart(e) {
             if (!splineApp || collabObjects.length === 0) return;
 
-            // Prevent event from bubbling to parent link
-            e.preventDefault();
-            e.stopPropagation();
-
             const zone = e.currentTarget;
             const collabIndex = parseInt(zone.dataset.collab);
 
             if (!isNaN(collabIndex) && collabObjects[collabIndex]) {
+                const collabType = zone.getAttribute('data-type');
+                
                 activeTouch = {
                     collabIndex: collabIndex,
                     startX: e.touches[0].clientX,
@@ -917,23 +895,10 @@ document.addEventListener('DOMContentLoaded', function() {
                     blockScroll: false,
                     gestureDecided: false,
                     touchId: e.touches[0].identifier,
-                    startTime: Date.now(),
-                    touchTarget: e.target,
-                    quickTapTimeout: setTimeout(() => {
-                        // If no drag after 200ms, allow navigation
-                        if (activeTouch && !activeTouch.gestureDecided) {
-                            console.log('[COLLAB] Quick tap detected - triggering parent link');
-                            // Find the parent link and click it
-                            const parentLink = zone.closest('a, .w-inline-block');
-                            if (parentLink && parentLink.href) {
-                                parentLink.click();
-                            }
-                            activeTouch = null;
-                        }
-                    }, 200)
+                    targetUrl: COLLAB_URLS[collabIndex]
                 };
 
-                console.log(`[COLLAB] Touch start on product ${collabIndex} - waiting to detect intention`);
+                console.log(`[COLLAB] Touch start on product ${collabIndex} (${collabType})`);
             }
         }
 
@@ -986,12 +951,6 @@ document.addEventListener('DOMContentLoaded', function() {
             const touch = Array.from(e.changedTouches).find(t => t.identifier === activeTouch.touchId);
             if (!touch) return;
 
-            // Clear timeout if still pending
-            if (activeTouch.quickTapTimeout) {
-                clearTimeout(activeTouch.quickTapTimeout);
-                activeTouch.quickTapTimeout = null;
-            }
-
             if (activeTouch.isRotating) {
                 if (activeTouch.blockScroll) {
                     e.preventDefault();
@@ -999,6 +958,12 @@ document.addEventListener('DOMContentLoaded', function() {
                 }
                 animateBackToDefault(activeTouch.collabIndex);
                 console.log('[COLLAB] Touch ended - animating back');
+            } else if (!activeTouch.gestureDecided) {
+                // Quick tap detected - navigate to collab page
+                if (activeTouch.targetUrl) {
+                    console.log(`[COLLAB] Quick tap - navigating to collab page`);
+                    window.location.href = activeTouch.targetUrl;
+                }
             }
 
             activeTouch = null;
@@ -1087,41 +1052,150 @@ document.addEventListener('DOMContentLoaded', function() {
         visibilityObserver.observe(viewer);
     }
 
-    // Enhanced initialization with proper async handling
-    async function initializeAllScenes() {
-        try {
-            console.log('[HOME] Starting scene initialization...');
-            
-            // Initialize both scenes concurrently for better performance
-            const [heroResult, collabResult] = await Promise.allSettled([
-                initializeHeroScene(),
-                initializeCollabScene()
-            ]);
-            
-            // Log results
-            if (heroResult.status === 'fulfilled') {
-                console.log('[HOME] ✓ Hero scene initialization completed');
-            } else {
-                console.error('[HOME] ✗ Hero scene initialization failed:', heroResult.reason);
+    // Aggressive scene optimization - only one scene active at a time
+    let activeScene = null;
+    let sceneObservers = new Map();
+    
+    function setupAggressiveSceneOptimization() {
+        console.log('[PERF] Setting up aggressive scene optimization...');
+        
+        // Look for the full-screen page wrappers (100vh sections)
+        const skiPageWrapper = document.querySelector('.page.wrapper_SKIS') || 
+                              document.querySelector('.SKIS_CONTAINER') ||
+                              document.querySelector('[class*="wrapper_SKIS"]') ||
+                              document.querySelector('[class*="SKIS"]');
+                              
+        const collabPageWrapper = document.querySelector('.page.wrapper_COLAB') || 
+                                 document.querySelector('.COLAB_CONTAINER') ||
+                                 document.querySelector('[class*="wrapper_COLAB"]') ||
+                                 document.querySelector('[class*="COLAB"]');
+        
+        if (skiPageWrapper) {
+            setupSceneObserver(skiPageWrapper, 'ski');
+            console.log('[PERF] ✓ Ski page wrapper observer setup on:', skiPageWrapper.className);
+        } else {
+            console.warn('[PERF] ✗ Ski page wrapper not found - trying scene container');
+            const heroScene = document.querySelector('.hero-scene');
+            if (heroScene) {
+                setupSceneObserver(heroScene, 'ski');
+                console.log('[PERF] ✓ Using .hero-scene as fallback');
             }
-            
-            if (collabResult.status === 'fulfilled') {
-                console.log('[HOME] ✓ Collab scene initialization completed');
-            } else {
-                console.error('[HOME] ✗ Collab scene initialization failed:', collabResult.reason);
+        }
+        
+        if (collabPageWrapper) {
+            setupSceneObserver(collabPageWrapper, 'colab');
+            console.log('[PERF] ✓ Collab page wrapper observer setup on:', collabPageWrapper.className);
+        } else {
+            console.warn('[PERF] ✗ Collab page wrapper not found - trying scene container');
+            const collabScene = document.querySelector('.hero-colab-scene');
+            if (collabScene) {
+                setupSceneObserver(collabScene, 'colab');
+                console.log('[PERF] ✓ Using .hero-colab-scene as fallback');
             }
-            
-        } catch (error) {
-            console.error('[HOME] Critical error during scene initialization:', error);
-            showSceneError('system', 'Failed to initialize Spline scenes');
         }
     }
+    
+    function setupSceneObserver(container, sceneType) {
+        const observer = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    // Scene came into view - activate it
+                    activateScene(sceneType, container);
+                } else {
+                    // Scene completely left view - deactivate it
+                    deactivateScene(sceneType, container);
+                }
+            });
+        }, { 
+            threshold: 0.01, // Only 1% needed to stay active (almost completely off screen to deactivate)
+            rootMargin: '-50px' // Extra margin - scene must be 50px off screen to deactivate
+        });
+        
+        observer.observe(container);
+        sceneObservers.set(sceneType, observer);
+    }
+    
+    async function activateScene(sceneType, container) {
+        console.log(`[PERF] Activating ${sceneType} scene...`);
+        
+        // Initialize the new scene first
+        if (sceneType === 'ski') {
+            await initializeHeroScene();
+        } else if (sceneType === 'colab') {
+            await initializeCollabScene();
+        }
+        
+        console.log(`[PERF] ✓ ${sceneType} scene activated`);
+        
+        // Update default text based on active scene
+        setTimeout(() => {
+            if (window.__textControl && window.__textControl.setDefaultText) {
+                if (sceneType === 'ski') {
+                    window.__textControl.setDefaultText('SKIS');
+                    console.log('[TEXT] ✓ Default text set to SKIS');
+                } else if (sceneType === 'colab') {
+                    window.__textControl.setDefaultText('COLAB');
+                    console.log('[TEXT] ✓ Default text set to COLAB');
+                }
+            } else {
+                console.warn('[TEXT] ✗ Text control not ready, retrying...');
+                // Retry after text control is initialized
+                setTimeout(() => {
+                    if (window.__textControl && window.__textControl.setDefaultText) {
+                        if (sceneType === 'ski') {
+                            window.__textControl.setDefaultText('SKIS');
+                            console.log('[TEXT] ✓ Default text set to SKIS (retry)');
+                        } else if (sceneType === 'colab') {
+                            window.__textControl.setDefaultText('COLAB');
+                            console.log('[TEXT] ✓ Default text set to COLAB (retry)');
+                        }
+                    }
+                }, 500);
+            }
+        }, 100);
+        
+        activeScene = sceneType;
+    }
+    
+    function deactivateScene(sceneType, container) {
+        return new Promise((resolve) => {
+            console.log(`[PERF] Deactivating ${sceneType} scene...`);
+            
+            // Find and remove scene viewers
+            const sceneContainer = sceneType === 'ski' 
+                ? document.querySelector('.hero-scene')
+                : document.querySelector('.hero-colab-scene');
+                
+            if (sceneContainer) {
+                const viewers = sceneContainer.querySelectorAll('spline-viewer');
+                viewers.forEach(viewer => {
+                    // Stop any animations/rendering
+                    if (viewer._spline?.renderer) {
+                        viewer._spline.renderer.setAnimationLoop(null);
+                        viewer._spline.renderer.dispose();
+                    }
+                    
+                    // Remove from DOM
+                    viewer.remove();
+                    console.log(`[PERF] ✓ ${sceneType} viewer removed`);
+                });
+            }
+            
+            // Clear active scene if it was this one
+            if (activeScene === sceneType) {
+                activeScene = null;
+            }
+            
+            console.log(`[PERF] ✓ ${sceneType} scene deactivated`);
+            resolve();
+        });
+    }
 
-    // Start initialization when DOM is ready
+    // Start aggressive optimization when DOM is ready
     if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', initializeAllScenes);
+        document.addEventListener('DOMContentLoaded', setupAggressiveSceneOptimization);
     } else {
-        initializeAllScenes();
+        setupAggressiveSceneOptimization();
     }
 })();
 </script>
