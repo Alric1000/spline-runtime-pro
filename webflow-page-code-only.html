@@ -25,86 +25,6 @@
         -o-user-drag: none;
         user-drag: none;
     }
-    
-    /* Spline loading states */
-    .spline-loading {
-        position: relative;
-        background: #f5f5f5;
-    }
-    
-    .spline-loading::before {
-        content: 'Loading 3D Scene...';
-        position: absolute;
-        top: 50%;
-        left: 50%;
-        transform: translate(-50%, -50%);
-        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-        font-size: 14px;
-        color: #666;
-        z-index: 1;
-    }
-    
-    .spline-loading::after {
-        content: '';
-        position: absolute;
-        top: 50%;
-        left: 50%;
-        width: 20px;
-        height: 20px;
-        margin: -10px 0 0 -10px;
-        border: 2px solid #ddd;
-        border-top: 2px solid #666;
-        border-radius: 50%;
-        animation: spline-spin 1s linear infinite;
-        z-index: 1;
-        margin-top: 10px;
-    }
-    
-    .spline-error {
-        position: relative;
-        background: #ffe6e6;
-        border: 1px solid #ffcccc;
-    }
-    
-    .spline-error::before {
-        content: 'Failed to load 3D scene. Please refresh the page.';
-        position: absolute;
-        top: 50%;
-        left: 50%;
-        transform: translate(-50%, -50%);
-        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-        font-size: 12px;
-        color: #cc0000;
-        text-align: center;
-        z-index: 1;
-        max-width: 200px;
-    }
-    
-    .spline-loaded {
-        background: transparent;
-    }
-    
-    .spline-loaded::before,
-    .spline-loaded::after {
-        display: none;
-    }
-    
-    @keyframes spline-spin {
-        0% { transform: translate(-50%, -50%) rotate(0deg); }
-        100% { transform: translate(-50%, -50%) rotate(360deg); }
-    }
-    
-    /* Responsive adjustments */
-    @media (max-width: 768px) {
-        .spline-loading::before {
-            font-size: 12px;
-        }
-        
-        .spline-error::before {
-            font-size: 11px;
-            max-width: 150px;
-        }
-    }
 </style>
 
 <!-- Hover text script with instant touch response -->
@@ -298,6 +218,8 @@ document.addEventListener('DOMContentLoaded', function() {
                 // Setup rotation based on scene type
                 if (sceneType === 'hero') {
                     setupHeroRotation(viewer);
+                    // Add performance observer for hero scene
+                    setupHeroVisibilityObserver(viewer);
                 } else {
                     setupCollabRotation(viewer);
                 }
@@ -469,7 +391,9 @@ document.addEventListener('DOMContentLoaded', function() {
         function handleMouseDown(e) {
             if (!splineApp || skiObjects.length === 0) return;
 
+            // Prevent event from bubbling to parent link
             e.preventDefault();
+            e.stopPropagation();
 
             const zone = e.currentTarget;
             const skiIndex = parseInt(zone.dataset.ski);
@@ -490,10 +414,23 @@ document.addEventListener('DOMContentLoaded', function() {
                     isVerticalScroll: false,
                     gestureDecided: false,
                     clickTarget: e.target,
-                    skiType: skiType
+                    skiType: skiType,
+                    startTime: Date.now(),
+                    quickClickTimeout: setTimeout(() => {
+                        // If no drag after 200ms, allow navigation
+                        if (mouseDownData && !mouseDownData.gestureDecided) {
+                            console.log('[HOME] Quick click detected - triggering parent link');
+                            // Find the parent link and click it
+                            const parentLink = zone.closest('a, .w-inline-block');
+                            if (parentLink && parentLink.href) {
+                                parentLink.click();
+                            }
+                            mouseDownData = null;
+                        }
+                    }, 200)
                 };
 
-                console.log(`[HOME] Mouse down on ski ${skiIndex}`);
+                console.log(`[HOME] Mouse down on ski ${skiIndex} - waiting to detect intention`);
             }
         }
 
@@ -508,6 +445,12 @@ document.addEventListener('DOMContentLoaded', function() {
 
             if (!mouseDownData.gestureDecided && distance > DRAG_THRESHOLD) {
                 mouseDownData.gestureDecided = true;
+                
+                // Cancel navigation since user is dragging
+                if (mouseDownData.quickClickTimeout) {
+                    clearTimeout(mouseDownData.quickClickTimeout);
+                    mouseDownData.quickClickTimeout = null;
+                }
 
                 if (absX > absY * HORIZONTAL_RATIO) {
                     mouseDownData.isDragging = true;
@@ -537,6 +480,12 @@ document.addEventListener('DOMContentLoaded', function() {
         function handleMouseUp(e) {
             if (!mouseDownData) return;
 
+            // Clear timeout if still pending
+            if (mouseDownData.quickClickTimeout) {
+                clearTimeout(mouseDownData.quickClickTimeout);
+                mouseDownData.quickClickTimeout = null;
+            }
+
             if (window.__textControl) {
                 window.__textControl.setMouseDragging(false);
                 const hoveredZone = document.elementFromPoint(e.clientX, e.clientY);
@@ -554,15 +503,6 @@ document.addEventListener('DOMContentLoaded', function() {
                 e.stopPropagation();
                 animateBackToDefault(mouseDownData.skiIndex);
                 console.log('[HOME] Rotation ended');
-            } else if (!mouseDownData.gestureDecided) {
-                const clickTarget = mouseDownData.clickTarget;
-                if (clickTarget) {
-                    const link = clickTarget.closest('a, .w-inline-block');
-                    if (link && link.href) {
-                        console.log('[HOME] Click detected - following link');
-                        link.click();
-                    }
-                }
             }
 
             mouseDownData = null;
@@ -571,6 +511,10 @@ document.addEventListener('DOMContentLoaded', function() {
         // TOUCH HANDLING
         function handleTouchStart(e) {
             if (!splineApp || skiObjects.length === 0) return;
+
+            // Prevent event from bubbling to parent link
+            e.preventDefault();
+            e.stopPropagation();
 
             const zone = e.currentTarget;
             const skiIndex = parseInt(zone.dataset.ski);
@@ -584,10 +528,24 @@ document.addEventListener('DOMContentLoaded', function() {
                     isRotating: false,
                     blockScroll: false,
                     gestureDecided: false,
-                    touchId: e.touches[0].identifier
+                    touchId: e.touches[0].identifier,
+                    startTime: Date.now(),
+                    touchTarget: e.target,
+                    quickTapTimeout: setTimeout(() => {
+                        // If no drag after 200ms, allow navigation
+                        if (activeTouch && !activeTouch.gestureDecided) {
+                            console.log('[HOME] Quick tap detected - triggering parent link');
+                            // Find the parent link and click it
+                            const parentLink = zone.closest('a, .w-inline-block');
+                            if (parentLink && parentLink.href) {
+                                parentLink.click();
+                            }
+                            activeTouch = null;
+                        }
+                    }, 200)
                 };
 
-                console.log(`[HOME] Touch start on ski ${skiIndex}`);
+                console.log(`[HOME] Touch start on ski ${skiIndex} - waiting to detect intention`);
             }
         }
 
@@ -606,6 +564,12 @@ document.addEventListener('DOMContentLoaded', function() {
             if (!activeTouch.gestureDecided && distance > DRAG_THRESHOLD) {
                 activeTouch.gestureDecided = true;
                 activeTouch.isRotating = true;
+                
+                // Cancel quick tap timeout since user is dragging
+                if (activeTouch.quickTapTimeout) {
+                    clearTimeout(activeTouch.quickTapTimeout);
+                    activeTouch.quickTapTimeout = null;
+                }
 
                 if (absX > absY * HORIZONTAL_RATIO) {
                     activeTouch.blockScroll = true;
@@ -634,6 +598,12 @@ document.addEventListener('DOMContentLoaded', function() {
             const touch = Array.from(e.changedTouches).find(t => t.identifier === activeTouch.touchId);
             if (!touch) return;
 
+            // Clear timeout if still pending
+            if (activeTouch.quickTapTimeout) {
+                clearTimeout(activeTouch.quickTapTimeout);
+                activeTouch.quickTapTimeout = null;
+            }
+
             if (activeTouch.isRotating) {
                 if (activeTouch.blockScroll) {
                     e.preventDefault();
@@ -641,8 +611,6 @@ document.addEventListener('DOMContentLoaded', function() {
                 }
                 animateBackToDefault(activeTouch.skiIndex);
                 console.log('[HOME] Touch ended - animating back');
-            } else if (!activeTouch.gestureDecided) {
-                console.log('[HOME] Tap detected - following link');
             }
 
             activeTouch = null;
@@ -685,6 +653,36 @@ document.addEventListener('DOMContentLoaded', function() {
         }
 
         setTimeout(initializeScene, 2000);
+    }
+    
+    // Performance optimization for hero scene
+    function setupHeroVisibilityObserver(viewer) {
+        const visibilityObserver = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+                if (entry.target._spline) {
+                    if (entry.isIntersecting) {
+                        // Resume scene rendering
+                        if (entry.target._spline.renderer) {
+                            entry.target._spline.renderer.setAnimationLoop(() => {
+                                entry.target._spline.renderer.render(entry.target._spline.scene, entry.target._spline.camera);
+                            });
+                        }
+                        console.log('[PERF] Hero scene resumed');
+                    } else {
+                        // Pause scene rendering
+                        if (entry.target._spline.renderer) {
+                            entry.target._spline.renderer.setAnimationLoop(null);
+                        }
+                        console.log('[PERF] Hero scene paused');
+                    }
+                }
+            });
+        }, { 
+            threshold: 0.1,
+            rootMargin: '100px' // Start loading 100px before visible
+        });
+        
+        visibilityObserver.observe(viewer);
     }
 
     // Setup rotation for collab scene
@@ -781,7 +779,9 @@ document.addEventListener('DOMContentLoaded', function() {
         function handleMouseDown(e) {
             if (!splineApp || collabObjects.length === 0) return;
 
+            // Prevent event from bubbling to parent link
             e.preventDefault();
+            e.stopPropagation();
 
             const zone = e.currentTarget;
             const collabIndex = parseInt(zone.dataset.collab);
@@ -801,11 +801,24 @@ document.addEventListener('DOMContentLoaded', function() {
                     isDragging: false,
                     isVerticalScroll: false,
                     gestureDecided: false,
-                    clickTarget: e.target,
-                    collabType: collabType
+                    clickTarget: clickTarget,
+                    collabType: collabType,
+                    startTime: Date.now(),
+                    quickClickTimeout: setTimeout(() => {
+                        // If no drag after 200ms, allow navigation
+                        if (mouseDownData && !mouseDownData.gestureDecided) {
+                            console.log('[COLLAB] Quick click detected - triggering parent link');
+                            // Find the parent link and click it
+                            const parentLink = zone.closest('a, .w-inline-block');
+                            if (parentLink && parentLink.href) {
+                                parentLink.click();
+                            }
+                            mouseDownData = null;
+                        }
+                    }, 200)
                 };
 
-                console.log(`[COLLAB] Mouse down on product ${collabIndex}`);
+                console.log(`[COLLAB] Mouse down on product ${collabIndex} - preparing for potential drag`);
             }
         }
 
@@ -820,6 +833,12 @@ document.addEventListener('DOMContentLoaded', function() {
 
             if (!mouseDownData.gestureDecided && distance > DRAG_THRESHOLD) {
                 mouseDownData.gestureDecided = true;
+                
+                // Cancel navigation since user is dragging
+                if (mouseDownData.quickClickTimeout) {
+                    clearTimeout(mouseDownData.quickClickTimeout);
+                    mouseDownData.quickClickTimeout = null;
+                }
 
                 if (absX > absY * HORIZONTAL_RATIO) {
                     mouseDownData.isDragging = true;
@@ -849,6 +868,12 @@ document.addEventListener('DOMContentLoaded', function() {
         function handleMouseUp(e) {
             if (!mouseDownData) return;
 
+            // Clear timeout if still pending
+            if (mouseDownData.quickClickTimeout) {
+                clearTimeout(mouseDownData.quickClickTimeout);
+                mouseDownData.quickClickTimeout = null;
+            }
+
             if (window.__textControl) {
                 window.__textControl.setMouseDragging(false);
                 const hoveredZone = document.elementFromPoint(e.clientX, e.clientY);
@@ -866,15 +891,6 @@ document.addEventListener('DOMContentLoaded', function() {
                 e.stopPropagation();
                 animateBackToDefault(mouseDownData.collabIndex);
                 console.log('[COLLAB] Rotation ended');
-            } else if (!mouseDownData.gestureDecided) {
-                const clickTarget = mouseDownData.clickTarget;
-                if (clickTarget) {
-                    const link = clickTarget.closest('a, .w-inline-block');
-                    if (link && link.href) {
-                        console.log('[COLLAB] Click detected - following link');
-                        link.click();
-                    }
-                }
             }
 
             mouseDownData = null;
@@ -883,6 +899,10 @@ document.addEventListener('DOMContentLoaded', function() {
         // TOUCH HANDLING
         function handleTouchStart(e) {
             if (!splineApp || collabObjects.length === 0) return;
+
+            // Prevent event from bubbling to parent link
+            e.preventDefault();
+            e.stopPropagation();
 
             const zone = e.currentTarget;
             const collabIndex = parseInt(zone.dataset.collab);
@@ -896,10 +916,24 @@ document.addEventListener('DOMContentLoaded', function() {
                     isRotating: false,
                     blockScroll: false,
                     gestureDecided: false,
-                    touchId: e.touches[0].identifier
+                    touchId: e.touches[0].identifier,
+                    startTime: Date.now(),
+                    touchTarget: e.target,
+                    quickTapTimeout: setTimeout(() => {
+                        // If no drag after 200ms, allow navigation
+                        if (activeTouch && !activeTouch.gestureDecided) {
+                            console.log('[COLLAB] Quick tap detected - triggering parent link');
+                            // Find the parent link and click it
+                            const parentLink = zone.closest('a, .w-inline-block');
+                            if (parentLink && parentLink.href) {
+                                parentLink.click();
+                            }
+                            activeTouch = null;
+                        }
+                    }, 200)
                 };
 
-                console.log(`[COLLAB] Touch start on product ${collabIndex}`);
+                console.log(`[COLLAB] Touch start on product ${collabIndex} - waiting to detect intention`);
             }
         }
 
@@ -918,6 +952,12 @@ document.addEventListener('DOMContentLoaded', function() {
             if (!activeTouch.gestureDecided && distance > DRAG_THRESHOLD) {
                 activeTouch.gestureDecided = true;
                 activeTouch.isRotating = true;
+                
+                // Cancel quick tap timeout since user is dragging
+                if (activeTouch.quickTapTimeout) {
+                    clearTimeout(activeTouch.quickTapTimeout);
+                    activeTouch.quickTapTimeout = null;
+                }
 
                 if (absX > absY * HORIZONTAL_RATIO) {
                     activeTouch.blockScroll = true;
@@ -946,6 +986,12 @@ document.addEventListener('DOMContentLoaded', function() {
             const touch = Array.from(e.changedTouches).find(t => t.identifier === activeTouch.touchId);
             if (!touch) return;
 
+            // Clear timeout if still pending
+            if (activeTouch.quickTapTimeout) {
+                clearTimeout(activeTouch.quickTapTimeout);
+                activeTouch.quickTapTimeout = null;
+            }
+
             if (activeTouch.isRotating) {
                 if (activeTouch.blockScroll) {
                     e.preventDefault();
@@ -953,8 +999,6 @@ document.addEventListener('DOMContentLoaded', function() {
                 }
                 animateBackToDefault(activeTouch.collabIndex);
                 console.log('[COLLAB] Touch ended - animating back');
-            } else if (!activeTouch.gestureDecided) {
-                console.log('[COLLAB] Tap detected - following link');
             }
 
             activeTouch = null;
@@ -996,7 +1040,51 @@ document.addEventListener('DOMContentLoaded', function() {
             animate();
         }
 
-        setTimeout(initializeScene, 2000);
+        // Use Intersection Observer for performance optimization
+        const observer = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    console.log('[COLLAB] Scene became visible, initializing...');
+                    setTimeout(initializeScene, 500);
+                    observer.unobserve(entry.target);
+                    
+                    // Setup visibility observer for performance
+                    setupVisibilityObserver(viewer);
+                }
+            });
+        }, { threshold: 0.1 });
+        
+        observer.observe(viewer);
+    }
+    
+    // Performance optimization: Pause scenes when not visible
+    function setupVisibilityObserver(viewer) {
+        const visibilityObserver = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+                if (entry.target._spline) {
+                    if (entry.isIntersecting) {
+                        // Resume scene rendering
+                        if (entry.target._spline.renderer) {
+                            entry.target._spline.renderer.setAnimationLoop(() => {
+                                entry.target._spline.renderer.render(entry.target._spline.scene, entry.target._spline.camera);
+                            });
+                        }
+                        console.log('[PERF] Scene resumed');
+                    } else {
+                        // Pause scene rendering
+                        if (entry.target._spline.renderer) {
+                            entry.target._spline.renderer.setAnimationLoop(null);
+                        }
+                        console.log('[PERF] Scene paused');
+                    }
+                }
+            });
+        }, { 
+            threshold: 0.1,
+            rootMargin: '100px' // Start loading 100px before visible
+        });
+        
+        visibilityObserver.observe(viewer);
     }
 
     // Enhanced initialization with proper async handling
