@@ -1,0 +1,1039 @@
+<style>
+    /* Disable text selection and link dragging for Spline scenes */
+    .ski-trigger,
+    .ski-trigger *,
+    .colab-trigger,
+    .colab-trigger *,
+    spline-viewer {
+        -webkit-user-select: none;
+        -moz-user-select: none;
+        -ms-user-select: none;
+        user-select: none;
+        -webkit-touch-callout: none;
+        -webkit-tap-highlight-color: transparent;
+        pointer-events: auto;
+    }
+
+    /* Prevent link dragging */
+    .ski-trigger a,
+    .ski-trigger .w-inline-block,
+    .colab-trigger a,
+    .colab-trigger .w-inline-block {
+        -webkit-user-drag: none;
+        -khtml-user-drag: none;
+        -moz-user-drag: none;
+        -o-user-drag: none;
+        user-drag: none;
+    }
+    
+    /* Spline loading states */
+    .spline-loading {
+        position: relative;
+        background: #f5f5f5;
+    }
+    
+    .spline-loading::before {
+        content: 'Loading 3D Scene...';
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        font-size: 14px;
+        color: #666;
+        z-index: 1;
+    }
+    
+    .spline-loading::after {
+        content: '';
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        width: 20px;
+        height: 20px;
+        margin: -10px 0 0 -10px;
+        border: 2px solid #ddd;
+        border-top: 2px solid #666;
+        border-radius: 50%;
+        animation: spline-spin 1s linear infinite;
+        z-index: 1;
+        margin-top: 10px;
+    }
+    
+    .spline-error {
+        position: relative;
+        background: #ffe6e6;
+        border: 1px solid #ffcccc;
+    }
+    
+    .spline-error::before {
+        content: 'Failed to load 3D scene. Please refresh the page.';
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        font-size: 12px;
+        color: #cc0000;
+        text-align: center;
+        z-index: 1;
+        max-width: 200px;
+    }
+    
+    .spline-loaded {
+        background: transparent;
+    }
+    
+    .spline-loaded::before,
+    .spline-loaded::after {
+        display: none;
+    }
+    
+    @keyframes spline-spin {
+        0% { transform: translate(-50%, -50%) rotate(0deg); }
+        100% { transform: translate(-50%, -50%) rotate(360deg); }
+    }
+    
+    /* Responsive adjustments */
+    @media (max-width: 768px) {
+        .spline-loading::before {
+            font-size: 12px;
+        }
+        
+        .spline-error::before {
+            font-size: 11px;
+            max-width: 150px;
+        }
+    }
+</style>
+
+<!-- Hover text script with instant touch response -->
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Try multiple selectors to find the text element
+    let span = document.querySelector('.DYNAMIC_SKIS') ||
+               document.querySelector('.dynamic-skis') ||
+               document.querySelector('.dynamic_skis') ||
+               document.querySelector('[class*="DYNAMIC_SKIS"]') ||
+               document.querySelector('[class*="dynamic"]');
+
+    // Debug: Log what we found
+    if (!span) {
+        console.error('[TEXT] Could not find DYNAMIC_SKIS element. Looking for alternatives...');
+        // Try to find any element that might be the text
+        const possibleElements = document.querySelectorAll('h1, h2, h3, h4, h5, h6, .f-h3-heading, [class*="heading"]');
+        console.log('[TEXT] Found possible text elements:', possibleElements.length);
+        possibleElements.forEach(el => {
+            console.log('[TEXT] Element:', el.className, 'Text:', el.textContent.substring(0, 20));
+        });
+        return;
+    }
+
+    console.log('[TEXT] Found text element:', span.className);
+
+    const defaultText = span.textContent;
+    const containers = [...document.querySelectorAll('.ski-trigger'), ...document.querySelectorAll('.colab-trigger')];
+    let activeTextTouch = null;
+    let isMouseDragging = false;
+
+    containers.forEach(el => {
+        const value = el.getAttribute('data-type');
+        if (value) {
+            // Desktop hover - only change if not dragging
+            el.addEventListener('mouseenter', () => {
+                if (!activeTextTouch && !isMouseDragging) {
+                    span.textContent = value;
+                }
+            });
+            el.addEventListener('mouseleave', () => {
+                if (!activeTextTouch && !isMouseDragging) {
+                    span.textContent = defaultText;
+                }
+            });
+
+            // Mobile touch - immediate response
+            el.addEventListener('touchstart', (e) => {
+                activeTextTouch = el;
+                span.textContent = value;
+            }, { passive: true });
+
+            el.addEventListener('touchend', () => {
+                activeTextTouch = null;
+                span.textContent = defaultText;
+            }, { passive: true });
+
+            el.addEventListener('touchcancel', () => {
+                activeTextTouch = null;
+                span.textContent = defaultText;
+            }, { passive: true });
+        }
+    });
+
+    // Global touch end safety
+    document.addEventListener('touchend', () => {
+        if (activeTextTouch) {
+            activeTextTouch = null;
+            span.textContent = defaultText;
+        }
+    }, { passive: true });
+
+    // Expose functions for rotation script to use
+    window.__textControl = {
+        setMouseDragging: (state) => { isMouseDragging = state; },
+        setText: (text) => { if (span) span.textContent = text; },
+        getDefaultText: () => defaultText
+    };
+});
+</script>
+
+<!-- HOME PAGE - ROTATION FOR BOTH SKIS AND COLLABS -->
+<script>
+// Enhanced Spline initialization with proper error handling and runtime verification
+(function() {
+    // Prevent double initialization
+    if (window.__splineRotationInitialized) {
+        console.log('[HOME] Already initialized, skipping...');
+        return;
+    }
+    window.__splineRotationInitialized = true;
+
+    console.log('[HOME] Initializing with click-through support...');
+
+    const CLOUDFLARE_URL = 'https://spline-runtime-pro.pages.dev';
+    
+    // Verify runtime is available
+    function verifySplineRuntime() {
+        return new Promise((resolve, reject) => {
+            let attempts = 0;
+            const maxAttempts = 50; // 5 seconds max wait
+            
+            function checkRuntime() {
+                attempts++;
+                
+                if (typeof customElements !== 'undefined' && customElements.get('spline-viewer')) {
+                    console.log('[HOME] ✓ Spline runtime verified');
+                    resolve(true);
+                } else if (attempts >= maxAttempts) {
+                    console.error('[HOME] ✗ Spline runtime failed to load after 5 seconds');
+                    reject(new Error('Spline runtime not available'));
+                } else {
+                    setTimeout(checkRuntime, 100);
+                }
+            }
+            
+            checkRuntime();
+        });
+    }
+
+    // Initialize Hero Ski Scene with enhanced error handling
+    async function initializeHeroScene() {
+        try {
+            // Wait for runtime to be ready
+            await verifySplineRuntime();
+            
+            const heroContainer = document.querySelector('.hero-scene');
+
+            if (!heroContainer) {
+                console.warn('[HOME] No .hero-scene container found - scene will not load');
+                // Try alternative selectors
+                const alternatives = ['.hero_scene', '[data-scene="hero"]', '.spline-hero'];
+                for (const selector of alternatives) {
+                    const altContainer = document.querySelector(selector);
+                    if (altContainer) {
+                        console.log(`[HOME] Found alternative container: ${selector}`);
+                        return initializeSceneInContainer(altContainer, 'hero');
+                    }
+                }
+                return;
+            }
+
+            if (heroContainer.querySelector('spline-viewer')) {
+                console.log('[HOME] Ski scene already loaded');
+                return;
+            }
+
+            return initializeSceneInContainer(heroContainer, 'hero');
+            
+        } catch (error) {
+            console.error('[HOME] Failed to initialize hero scene:', error);
+            showSceneError('hero', error.message);
+        }
+    }
+    
+    // Generic scene initialization
+    function initializeSceneInContainer(container, sceneType) {
+        return new Promise((resolve, reject) => {
+            try {
+                // Create viewer with full interactions
+                const viewer = document.createElement('spline-viewer');
+                const sceneUrl = sceneType === 'hero' 
+                    ? `${CLOUDFLARE_URL}/scenes/hero-animation/scene.splinecode`
+                    : `${CLOUDFLARE_URL}/scenes/hero-collab/scene.splinecode`;
+                
+                viewer.setAttribute('url', sceneUrl);
+                viewer.style.width = '100%';
+                viewer.style.height = '100%';
+                
+                // Add loading state
+                container.classList.add('spline-loading');
+                
+                // Handle load events
+                viewer.addEventListener('load', () => {
+                    console.log(`[HOME] ✓ ${sceneType} scene loaded successfully`);
+                    container.classList.remove('spline-loading');
+                    container.classList.add('spline-loaded');
+                    resolve(viewer);
+                });
+                
+                viewer.addEventListener('error', (error) => {
+                    console.error(`[HOME] ✗ ${sceneType} scene failed to load:`, error);
+                    container.classList.remove('spline-loading');
+                    container.classList.add('spline-error');
+                    reject(error);
+                });
+
+                container.appendChild(viewer);
+                console.log(`[HOME] Loading ${sceneType} scene with full interactions...`);
+
+                // Setup rotation based on scene type
+                if (sceneType === 'hero') {
+                    setupHeroRotation(viewer);
+                } else {
+                    setupCollabRotation(viewer);
+                }
+                
+            } catch (error) {
+                reject(error);
+            }
+        });
+    }
+
+    // Initialize Hero Collab Scene with enhanced error handling
+    async function initializeCollabScene() {
+        try {
+            // Wait for runtime to be ready
+            await verifySplineRuntime();
+            
+            const collabContainer = document.querySelector('.hero-colab-scene');
+
+            if (!collabContainer) {
+                console.warn('[COLLAB] No .hero-colab-scene container found - scene will not load');
+                // Try alternative selectors
+                const alternatives = ['.hero_colab_scene', '[data-scene="collab"]', '.spline-collab'];
+                for (const selector of alternatives) {
+                    const altContainer = document.querySelector(selector);
+                    if (altContainer) {
+                        console.log(`[COLLAB] Found alternative container: ${selector}`);
+                        return initializeSceneInContainer(altContainer, 'collab');
+                    }
+                }
+                return;
+            }
+
+            if (collabContainer.querySelector('spline-viewer')) {
+                console.log('[COLLAB] Scene already loaded');
+                return;
+            }
+
+            return initializeSceneInContainer(collabContainer, 'collab');
+            
+        } catch (error) {
+            console.error('[COLLAB] Failed to initialize collab scene:', error);
+            showSceneError('collab', error.message);
+        }
+    }
+    
+    // Error display function
+    function showSceneError(sceneType, message) {
+        console.error(`[${sceneType.toUpperCase()}] Scene Error: ${message}`);
+        
+        // Create a simple error message for debugging
+        const errorDiv = document.createElement('div');
+        errorDiv.style.cssText = `
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: #ff4444;
+            color: white;
+            padding: 10px;
+            border-radius: 4px;
+            font-family: monospace;
+            font-size: 12px;
+            z-index: 10000;
+            max-width: 300px;
+        `;
+        errorDiv.textContent = `Spline ${sceneType} scene failed: ${message}`;
+        
+        document.body.appendChild(errorDiv);
+        
+        // Auto-remove after 10 seconds
+        setTimeout(() => {
+            if (errorDiv.parentNode) {
+                errorDiv.parentNode.removeChild(errorDiv);
+            }
+        }, 10000);
+    }
+
+    // Setup rotation for hero ski scene
+    function setupHeroRotation(viewer) {
+        const triggerZones = document.querySelectorAll('.ski-trigger');
+
+        if (triggerZones.length !== 4) {
+            console.error('[HOME] Expected 4 trigger zones, found:', triggerZones.length);
+            return;
+        }
+
+        let splineApp = null;
+        let skiObjects = [];
+        let mouseDownData = null;
+        let activeTouch = null;
+        let animationFrame = null;
+
+        const DRAG_THRESHOLD = 10;
+        const HORIZONTAL_RATIO = 1.5;
+        const DESKTOP_ROTATION_SPEED = 0.5;
+        const MOBILE_ROTATION_SPEED = 1.0;
+        const DEFAULT_ROTATION = 90;
+        const DEFAULT_RADIANS = DEFAULT_ROTATION * (Math.PI / 180);
+        let currentRotations = [DEFAULT_ROTATION, DEFAULT_ROTATION, DEFAULT_ROTATION, DEFAULT_ROTATION];
+
+        const SKI_MAPPING = [
+            { name: 'CARVE', uuid: 'c5d6f3ff-e0a8-42e3-8fa3-3ab4f6a6a82c' },
+            { name: 'PARK', uuid: '731fbf35-4ab6-40a4-b7d0-22cd41b67649' },
+            { name: 'ALLMOUNTAIN', uuid: '1057c6ec-57c0-4d4a-bdd0-00999322dd99' },
+            { name: 'POWDER', uuid: 'b492d3e6-5ab3-40e8-8635-8bed0b3ec600' }
+        ];
+
+        function initializeScene() {
+            splineApp = viewer._spline;
+
+            if (!splineApp) {
+                setTimeout(initializeScene, 500);
+                return;
+            }
+
+            console.log('[HOME] Spline app ready');
+
+            if (splineApp.getAllObjects) {
+                const allObjects = splineApp.getAllObjects();
+
+                SKI_MAPPING.forEach((ski, index) => {
+                    const obj = allObjects.find(o => o.uuid === ski.uuid);
+                    if (obj) {
+                        skiObjects[index] = obj;
+                        console.log(`[HOME] ✓ ${ski.name} ready`);
+
+                        if (obj.rotation) {
+                            obj.rotation.y = DEFAULT_RADIANS;
+                        }
+                    }
+                });
+
+                if (skiObjects.filter(o => o).length === 4) {
+                    console.log('[HOME] All 4 skis loaded');
+                    setupInteraction();
+                }
+            }
+        }
+
+        function setupInteraction() {
+            triggerZones.forEach((zone, index) => {
+                if (!zone.hasAttribute('data-ski')) {
+                    zone.setAttribute('data-ski', index);
+                }
+
+                // Prevent default drag behavior on links inside triggers
+                const links = zone.querySelectorAll('a, .w-inline-block');
+                links.forEach(link => {
+                    link.addEventListener('dragstart', (e) => {
+                        e.preventDefault();
+                        return false;
+                    });
+                });
+
+                zone.addEventListener('mousedown', handleMouseDown, { capture: true, passive: false });
+                zone.addEventListener('touchstart', handleTouchStart, { capture: true, passive: false });
+            });
+
+            // Global listeners
+            window.addEventListener('mousemove', handleMouseMove, { capture: true, passive: false });
+            window.addEventListener('mouseup', handleMouseUp, { capture: true, passive: false });
+            window.addEventListener('touchmove', handleTouchMove, { capture: true, passive: false });
+            window.addEventListener('touchend', handleTouchEnd, { capture: true, passive: false });
+            window.addEventListener('touchcancel', handleTouchEnd, { capture: true, passive: false });
+
+            console.log('[HOME] Rotation enabled with gesture detection');
+        }
+
+        // MOUSE HANDLING
+        function handleMouseDown(e) {
+            if (!splineApp || skiObjects.length === 0) return;
+
+            e.preventDefault();
+
+            const zone = e.currentTarget;
+            const skiIndex = parseInt(zone.dataset.ski);
+
+            if (!isNaN(skiIndex) && skiObjects[skiIndex]) {
+                const skiType = zone.getAttribute('data-type');
+                if (window.__textControl && skiType) {
+                    window.__textControl.setMouseDragging(true);
+                    window.__textControl.setText(skiType);
+                }
+
+                mouseDownData = {
+                    skiIndex: skiIndex,
+                    startX: e.clientX,
+                    startY: e.clientY,
+                    startRotation: currentRotations[skiIndex],
+                    isDragging: false,
+                    isVerticalScroll: false,
+                    gestureDecided: false,
+                    clickTarget: e.target,
+                    skiType: skiType
+                };
+
+                console.log(`[HOME] Mouse down on ski ${skiIndex}`);
+            }
+        }
+
+        function handleMouseMove(e) {
+            if (!mouseDownData) return;
+
+            const deltaX = e.clientX - mouseDownData.startX;
+            const deltaY = e.clientY - mouseDownData.startY;
+            const absX = Math.abs(deltaX);
+            const absY = Math.abs(deltaY);
+            const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+
+            if (!mouseDownData.gestureDecided && distance > DRAG_THRESHOLD) {
+                mouseDownData.gestureDecided = true;
+
+                if (absX > absY * HORIZONTAL_RATIO) {
+                    mouseDownData.isDragging = true;
+                    console.log('[HOME] Horizontal drag detected - rotating');
+                } else {
+                    mouseDownData.isVerticalScroll = true;
+                    console.log('[HOME] Vertical scroll detected - passing through');
+                    if (window.__textControl) {
+                        window.__textControl.setMouseDragging(false);
+                        window.__textControl.setText(window.__textControl.getDefaultText());
+                    }
+                    mouseDownData = null;
+                    return;
+                }
+            }
+
+            if (mouseDownData && mouseDownData.isDragging) {
+                e.preventDefault();
+                e.stopPropagation();
+
+                const rotation = mouseDownData.startRotation + (deltaX * DESKTOP_ROTATION_SPEED);
+                currentRotations[mouseDownData.skiIndex] = rotation;
+                applyRotation(mouseDownData.skiIndex, rotation);
+            }
+        }
+
+        function handleMouseUp(e) {
+            if (!mouseDownData) return;
+
+            if (window.__textControl) {
+                window.__textControl.setMouseDragging(false);
+                const hoveredZone = document.elementFromPoint(e.clientX, e.clientY);
+                const hoveredTrigger = hoveredZone?.closest('.ski-trigger');
+                if (hoveredTrigger) {
+                    const hoverType = hoveredTrigger.getAttribute('data-type');
+                    window.__textControl.setText(hoverType || window.__textControl.getDefaultText());
+                } else {
+                    window.__textControl.setText(window.__textControl.getDefaultText());
+                }
+            }
+
+            if (mouseDownData.isDragging) {
+                e.preventDefault();
+                e.stopPropagation();
+                animateBackToDefault(mouseDownData.skiIndex);
+                console.log('[HOME] Rotation ended');
+            } else if (!mouseDownData.gestureDecided) {
+                const clickTarget = mouseDownData.clickTarget;
+                if (clickTarget) {
+                    const link = clickTarget.closest('a, .w-inline-block');
+                    if (link && link.href) {
+                        console.log('[HOME] Click detected - following link');
+                        link.click();
+                    }
+                }
+            }
+
+            mouseDownData = null;
+        }
+
+        // TOUCH HANDLING
+        function handleTouchStart(e) {
+            if (!splineApp || skiObjects.length === 0) return;
+
+            const zone = e.currentTarget;
+            const skiIndex = parseInt(zone.dataset.ski);
+
+            if (!isNaN(skiIndex) && skiObjects[skiIndex]) {
+                activeTouch = {
+                    skiIndex: skiIndex,
+                    startX: e.touches[0].clientX,
+                    startY: e.touches[0].clientY,
+                    startRotation: currentRotations[skiIndex],
+                    isRotating: false,
+                    blockScroll: false,
+                    gestureDecided: false,
+                    touchId: e.touches[0].identifier
+                };
+
+                console.log(`[HOME] Touch start on ski ${skiIndex}`);
+            }
+        }
+
+        function handleTouchMove(e) {
+            if (!activeTouch) return;
+
+            const touch = Array.from(e.touches).find(t => t.identifier === activeTouch.touchId);
+            if (!touch) return;
+
+            const deltaX = touch.clientX - activeTouch.startX;
+            const deltaY = touch.clientY - activeTouch.startY;
+            const absX = Math.abs(deltaX);
+            const absY = Math.abs(deltaY);
+            const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+
+            if (!activeTouch.gestureDecided && distance > DRAG_THRESHOLD) {
+                activeTouch.gestureDecided = true;
+                activeTouch.isRotating = true;
+
+                if (absX > absY * HORIZONTAL_RATIO) {
+                    activeTouch.blockScroll = true;
+                    console.log('[HOME] Horizontal drag - rotating + blocking scroll');
+                } else {
+                    activeTouch.blockScroll = false;
+                    console.log('[HOME] Vertical scroll - rotating + allowing scroll');
+                }
+            }
+
+            if (activeTouch.isRotating) {
+                if (activeTouch.blockScroll) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                }
+
+                const rotation = activeTouch.startRotation + (deltaX * MOBILE_ROTATION_SPEED);
+                currentRotations[activeTouch.skiIndex] = rotation;
+                applyRotation(activeTouch.skiIndex, rotation);
+            }
+        }
+
+        function handleTouchEnd(e) {
+            if (!activeTouch) return;
+
+            const touch = Array.from(e.changedTouches).find(t => t.identifier === activeTouch.touchId);
+            if (!touch) return;
+
+            if (activeTouch.isRotating) {
+                if (activeTouch.blockScroll) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                }
+                animateBackToDefault(activeTouch.skiIndex);
+                console.log('[HOME] Touch ended - animating back');
+            } else if (!activeTouch.gestureDecided) {
+                console.log('[HOME] Tap detected - following link');
+            }
+
+            activeTouch = null;
+        }
+
+        function applyRotation(skiIndex, degrees) {
+            const skiObject = skiObjects[skiIndex];
+            if (!skiObject || !skiObject.rotation) return;
+
+            const radians = degrees * (Math.PI / 180);
+            skiObject.rotation.y = radians;
+
+            if (splineApp.renderer && splineApp.renderer.render) {
+                splineApp.renderer.render(splineApp.scene, splineApp.camera);
+            }
+        }
+
+        function animateBackToDefault(skiIndex) {
+            const startRotation = currentRotations[skiIndex];
+            const endRotation = DEFAULT_ROTATION;
+            const duration = 500;
+            const startTime = Date.now();
+
+            function animate() {
+                const elapsed = Date.now() - startTime;
+                const progress = Math.min(elapsed / duration, 1);
+                const eased = 1 - Math.pow(1 - progress, 3);
+                const rotation = startRotation + (endRotation - startRotation) * eased;
+
+                currentRotations[skiIndex] = rotation;
+                applyRotation(skiIndex, rotation);
+
+                if (progress < 1) {
+                    animationFrame = requestAnimationFrame(animate);
+                }
+            }
+
+            if (animationFrame) cancelAnimationFrame(animationFrame);
+            animate();
+        }
+
+        setTimeout(initializeScene, 2000);
+    }
+
+    // Setup rotation for collab scene
+    function setupCollabRotation(viewer) {
+        const triggerZones = document.querySelectorAll('.colab-trigger');
+
+        if (triggerZones.length !== 3) {
+            console.error('[COLLAB] Expected 3 trigger zones, found:', triggerZones.length);
+            return;
+        }
+
+        let splineApp = null;
+        let collabObjects = [];
+        let mouseDownData = null;
+        let activeTouch = null;
+        let animationFrame = null;
+
+        const DRAG_THRESHOLD = 10;
+        const HORIZONTAL_RATIO = 1.5;
+        const DESKTOP_ROTATION_SPEED = 0.5;
+        const MOBILE_ROTATION_SPEED = 1.0;
+        const DEFAULT_ROTATION = 90;
+        const DEFAULT_RADIANS = DEFAULT_ROTATION * (Math.PI / 180);
+        let currentRotations = [DEFAULT_ROTATION, DEFAULT_ROTATION, DEFAULT_ROTATION];
+
+        const COLLAB_MAPPING = [
+            { name: 'SHADES', uuid: 'ecda58a5-e4e3-4409-850b-3b6ede811288' },
+            { name: 'GOGGLES', uuid: '59bb33c8-b13b-462e-9b22-2ce8d50bb72c' },
+            { name: 'SOFTTIE', uuid: '6cd8539d-d7bd-4aa2-a1b6-684f7a5e22d0' }
+        ];
+
+        function initializeScene() {
+            splineApp = viewer._spline;
+
+            if (!splineApp) {
+                setTimeout(initializeScene, 500);
+                return;
+            }
+
+            console.log('[COLLAB] Spline app ready');
+
+            if (splineApp.getAllObjects) {
+                const allObjects = splineApp.getAllObjects();
+
+                COLLAB_MAPPING.forEach((collab, index) => {
+                    const obj = allObjects.find(o => o.uuid === collab.uuid);
+                    if (obj) {
+                        collabObjects[index] = obj;
+                        console.log(`[COLLAB] ✓ ${collab.name} ready`);
+
+                        if (obj.rotation) {
+                            obj.rotation.y = DEFAULT_RADIANS;
+                        }
+                    }
+                });
+
+                if (collabObjects.filter(o => o).length === 3) {
+                    console.log('[COLLAB] All 3 products loaded');
+                    setupInteraction();
+                }
+            }
+        }
+
+        function setupInteraction() {
+            triggerZones.forEach((zone, index) => {
+                if (!zone.hasAttribute('data-collab')) {
+                    zone.setAttribute('data-collab', index);
+                }
+
+                // Prevent default drag behavior on links inside triggers
+                const links = zone.querySelectorAll('a, .w-inline-block');
+                links.forEach(link => {
+                    link.addEventListener('dragstart', (e) => {
+                        e.preventDefault();
+                        return false;
+                    });
+                });
+
+                zone.addEventListener('mousedown', handleMouseDown, { capture: true, passive: false });
+                zone.addEventListener('touchstart', handleTouchStart, { capture: true, passive: false });
+            });
+
+            // Global listeners
+            window.addEventListener('mousemove', handleMouseMove, { capture: true, passive: false });
+            window.addEventListener('mouseup', handleMouseUp, { capture: true, passive: false });
+            window.addEventListener('touchmove', handleTouchMove, { capture: true, passive: false });
+            window.addEventListener('touchend', handleTouchEnd, { capture: true, passive: false });
+            window.addEventListener('touchcancel', handleTouchEnd, { capture: true, passive: false });
+
+            console.log('[COLLAB] Rotation enabled with gesture detection');
+        }
+
+        // MOUSE HANDLING
+        function handleMouseDown(e) {
+            if (!splineApp || collabObjects.length === 0) return;
+
+            e.preventDefault();
+
+            const zone = e.currentTarget;
+            const collabIndex = parseInt(zone.dataset.collab);
+
+            if (!isNaN(collabIndex) && collabObjects[collabIndex]) {
+                const collabType = zone.getAttribute('data-type');
+                if (window.__textControl && collabType) {
+                    window.__textControl.setMouseDragging(true);
+                    window.__textControl.setText(collabType);
+                }
+
+                mouseDownData = {
+                    collabIndex: collabIndex,
+                    startX: e.clientX,
+                    startY: e.clientY,
+                    startRotation: currentRotations[collabIndex],
+                    isDragging: false,
+                    isVerticalScroll: false,
+                    gestureDecided: false,
+                    clickTarget: e.target,
+                    collabType: collabType
+                };
+
+                console.log(`[COLLAB] Mouse down on product ${collabIndex}`);
+            }
+        }
+
+        function handleMouseMove(e) {
+            if (!mouseDownData) return;
+
+            const deltaX = e.clientX - mouseDownData.startX;
+            const deltaY = e.clientY - mouseDownData.startY;
+            const absX = Math.abs(deltaX);
+            const absY = Math.abs(deltaY);
+            const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+
+            if (!mouseDownData.gestureDecided && distance > DRAG_THRESHOLD) {
+                mouseDownData.gestureDecided = true;
+
+                if (absX > absY * HORIZONTAL_RATIO) {
+                    mouseDownData.isDragging = true;
+                    console.log('[COLLAB] Horizontal drag detected - rotating');
+                } else {
+                    mouseDownData.isVerticalScroll = true;
+                    console.log('[COLLAB] Vertical scroll detected - passing through');
+                    if (window.__textControl) {
+                        window.__textControl.setMouseDragging(false);
+                        window.__textControl.setText(window.__textControl.getDefaultText());
+                    }
+                    mouseDownData = null;
+                    return;
+                }
+            }
+
+            if (mouseDownData && mouseDownData.isDragging) {
+                e.preventDefault();
+                e.stopPropagation();
+
+                const rotation = mouseDownData.startRotation + (deltaX * DESKTOP_ROTATION_SPEED);
+                currentRotations[mouseDownData.collabIndex] = rotation;
+                applyRotation(mouseDownData.collabIndex, rotation);
+            }
+        }
+
+        function handleMouseUp(e) {
+            if (!mouseDownData) return;
+
+            if (window.__textControl) {
+                window.__textControl.setMouseDragging(false);
+                const hoveredZone = document.elementFromPoint(e.clientX, e.clientY);
+                const hoveredTrigger = hoveredZone?.closest('.colab-trigger');
+                if (hoveredTrigger) {
+                    const hoverType = hoveredTrigger.getAttribute('data-type');
+                    window.__textControl.setText(hoverType || window.__textControl.getDefaultText());
+                } else {
+                    window.__textControl.setText(window.__textControl.getDefaultText());
+                }
+            }
+
+            if (mouseDownData.isDragging) {
+                e.preventDefault();
+                e.stopPropagation();
+                animateBackToDefault(mouseDownData.collabIndex);
+                console.log('[COLLAB] Rotation ended');
+            } else if (!mouseDownData.gestureDecided) {
+                const clickTarget = mouseDownData.clickTarget;
+                if (clickTarget) {
+                    const link = clickTarget.closest('a, .w-inline-block');
+                    if (link && link.href) {
+                        console.log('[COLLAB] Click detected - following link');
+                        link.click();
+                    }
+                }
+            }
+
+            mouseDownData = null;
+        }
+
+        // TOUCH HANDLING
+        function handleTouchStart(e) {
+            if (!splineApp || collabObjects.length === 0) return;
+
+            const zone = e.currentTarget;
+            const collabIndex = parseInt(zone.dataset.collab);
+
+            if (!isNaN(collabIndex) && collabObjects[collabIndex]) {
+                activeTouch = {
+                    collabIndex: collabIndex,
+                    startX: e.touches[0].clientX,
+                    startY: e.touches[0].clientY,
+                    startRotation: currentRotations[collabIndex],
+                    isRotating: false,
+                    blockScroll: false,
+                    gestureDecided: false,
+                    touchId: e.touches[0].identifier
+                };
+
+                console.log(`[COLLAB] Touch start on product ${collabIndex}`);
+            }
+        }
+
+        function handleTouchMove(e) {
+            if (!activeTouch) return;
+
+            const touch = Array.from(e.touches).find(t => t.identifier === activeTouch.touchId);
+            if (!touch) return;
+
+            const deltaX = touch.clientX - activeTouch.startX;
+            const deltaY = touch.clientY - activeTouch.startY;
+            const absX = Math.abs(deltaX);
+            const absY = Math.abs(deltaY);
+            const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+
+            if (!activeTouch.gestureDecided && distance > DRAG_THRESHOLD) {
+                activeTouch.gestureDecided = true;
+                activeTouch.isRotating = true;
+
+                if (absX > absY * HORIZONTAL_RATIO) {
+                    activeTouch.blockScroll = true;
+                    console.log('[COLLAB] Horizontal drag - rotating + blocking scroll');
+                } else {
+                    activeTouch.blockScroll = false;
+                    console.log('[COLLAB] Vertical scroll - rotating + allowing scroll');
+                }
+            }
+
+            if (activeTouch.isRotating) {
+                if (activeTouch.blockScroll) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                }
+
+                const rotation = activeTouch.startRotation + (deltaX * MOBILE_ROTATION_SPEED);
+                currentRotations[activeTouch.collabIndex] = rotation;
+                applyRotation(activeTouch.collabIndex, rotation);
+            }
+        }
+
+        function handleTouchEnd(e) {
+            if (!activeTouch) return;
+
+            const touch = Array.from(e.changedTouches).find(t => t.identifier === activeTouch.touchId);
+            if (!touch) return;
+
+            if (activeTouch.isRotating) {
+                if (activeTouch.blockScroll) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                }
+                animateBackToDefault(activeTouch.collabIndex);
+                console.log('[COLLAB] Touch ended - animating back');
+            } else if (!activeTouch.gestureDecided) {
+                console.log('[COLLAB] Tap detected - following link');
+            }
+
+            activeTouch = null;
+        }
+
+        function applyRotation(collabIndex, degrees) {
+            const collabObject = collabObjects[collabIndex];
+            if (!collabObject || !collabObject.rotation) return;
+
+            const radians = degrees * (Math.PI / 180);
+            collabObject.rotation.y = radians;
+
+            if (splineApp.renderer && splineApp.renderer.render) {
+                splineApp.renderer.render(splineApp.scene, splineApp.camera);
+            }
+        }
+
+        function animateBackToDefault(collabIndex) {
+            const startRotation = currentRotations[collabIndex];
+            const endRotation = DEFAULT_ROTATION;
+            const duration = 500;
+            const startTime = Date.now();
+
+            function animate() {
+                const elapsed = Date.now() - startTime;
+                const progress = Math.min(elapsed / duration, 1);
+                const eased = 1 - Math.pow(1 - progress, 3);
+                const rotation = startRotation + (endRotation - startRotation) * eased;
+
+                currentRotations[collabIndex] = rotation;
+                applyRotation(collabIndex, rotation);
+
+                if (progress < 1) {
+                    animationFrame = requestAnimationFrame(animate);
+                }
+            }
+
+            if (animationFrame) cancelAnimationFrame(animationFrame);
+            animate();
+        }
+
+        setTimeout(initializeScene, 2000);
+    }
+
+    // Enhanced initialization with proper async handling
+    async function initializeAllScenes() {
+        try {
+            console.log('[HOME] Starting scene initialization...');
+            
+            // Initialize both scenes concurrently for better performance
+            const [heroResult, collabResult] = await Promise.allSettled([
+                initializeHeroScene(),
+                initializeCollabScene()
+            ]);
+            
+            // Log results
+            if (heroResult.status === 'fulfilled') {
+                console.log('[HOME] ✓ Hero scene initialization completed');
+            } else {
+                console.error('[HOME] ✗ Hero scene initialization failed:', heroResult.reason);
+            }
+            
+            if (collabResult.status === 'fulfilled') {
+                console.log('[HOME] ✓ Collab scene initialization completed');
+            } else {
+                console.error('[HOME] ✗ Collab scene initialization failed:', collabResult.reason);
+            }
+            
+        } catch (error) {
+            console.error('[HOME] Critical error during scene initialization:', error);
+            showSceneError('system', 'Failed to initialize Spline scenes');
+        }
+    }
+
+    // Start initialization when DOM is ready
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initializeAllScenes);
+    } else {
+        initializeAllScenes();
+    }
+})();
+</script>
