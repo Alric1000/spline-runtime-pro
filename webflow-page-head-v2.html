@@ -1,0 +1,438 @@
+<style>
+  .skis_container,
+  .page-wrapper_skis,
+  .f-section-large,
+  .hero-wrapper {
+    height: var(--app-height, 100vh) !important;
+    min-height: var(--app-height, 100vh) !important;
+    max-height: var(--app-height, 100vh) !important;
+  }
+</style>
+
+<script>
+(function() {
+  var setHeight = function() {
+    document.documentElement.style.setProperty('--app-height', window.innerHeight + 'px');
+  };
+  setHeight();
+  window.addEventListener('orientationchange', function() {
+    setTimeout(setHeight, 150);
+  });
+})();
+</script>
+
+<style>
+    .ski-trigger, .ski-trigger *, .colab-trigger, .colab-trigger *, .binding-trigger, .binding-trigger *, spline-viewer {
+        -webkit-user-select: none;
+        user-select: none;
+        -webkit-touch-callout: none;
+        -webkit-tap-highlight-color: transparent;
+        pointer-events: auto;
+    }
+    .ski-trigger, .colab-trigger, .binding-trigger { position: relative; z-index: 50; }
+    spline-viewer { width: 100%; height: 100%; }
+</style>
+
+<script>
+(function() {
+    'use strict';
+    if (window.__splineInit) return;
+    window.__splineInit = true;
+
+    setTimeout(function() {
+        var CONFIG = {
+            CLOUDFLARE_URL: 'https://spline-runtime-pro.pages.dev',
+            DRAG_THRESHOLD: 10,
+            ROTATION_SPEED: { desktop: 0.5, mobile: 1.0 },
+            DEFAULT_ROTATIONS: [90, 90, 90, 0, 90],  // Per-ski defaults (Freeride = 0° due to -90° base)
+            ANIMATION_DURATION: 500,
+            INIT_DELAY: 1500,
+            SKI_COUNT: 5,
+            AUTO_ORBIT: {
+                SPEED: 0.15,
+                EASE_DURATION: 1500,
+                START_DELAY: 3400,
+                ENABLED: true
+            }
+        };
+
+        var PRODUCTS = [
+            { uuid: 'c5d6f3ff-e0a8-42e3-8fa3-3ab4f6a6a82c' },  // Carve
+            { uuid: '731fbf35-4ab6-40a4-b7d0-22cd41b67649' },  // Park
+            { uuid: '1057c6ec-57c0-4d4a-bdd0-00999322dd99' },  // All-Mountain
+            { uuid: 'bab38986-8729-46d9-bcaf-2d51aea7177f' },  // Freeride
+            { uuid: 'b492d3e6-5ab3-40e8-8635-8bed0b3ec600' }   // Powder
+        ];
+
+        var textController = {
+            element: null,
+            section: 'skis',
+            isDragging: false,
+            activeTouch: null,
+            resetTimeout: null,
+            currentText: 'SKIS',
+
+            init: function() {
+                var selectors = ['.DYNAMIC_SKIS', '.dynamic-skis', '[class*="dynamic-skis"]', '[class*="DYNAMIC_SKIS"]', '[class*="dynamic"]'];
+                for (var i = 0; i < selectors.length; i++) {
+                    this.element = document.querySelector(selectors[i]);
+                    if (this.element) break;
+                }
+
+                if (this.element) {
+                    this.element.textContent = 'SKIS';
+                    this.currentText = 'SKIS';
+                }
+                this.setupListeners();
+            },
+
+            setupListeners: function() {
+                var self = this;
+                if (!this.element) return;
+
+                document.querySelectorAll('.ski-trigger, .colab-trigger, .binding-trigger').forEach(function(el) {
+                    el.addEventListener('mouseenter', function() {
+                        var text = el.getAttribute('data-type');
+                        if (text && !self.isDragging && !self.activeTouch) {
+                            self.cancelReset();
+                            self.setText(text);
+                        }
+                    });
+
+                    el.addEventListener('mouseleave', function() {
+                        if (!self.isDragging && !self.activeTouch) {
+                            self.scheduleReset();
+                        }
+                    });
+
+                    el.addEventListener('touchstart', function() {
+                        var text = el.getAttribute('data-type');
+                        if (text) {
+                            self.activeTouch = true;
+                            self.cancelReset();
+                            self.setText(text);
+                        }
+                    }, { passive: true });
+
+                    el.addEventListener('touchend', function() {
+                        setTimeout(function() {
+                            self.activeTouch = false;
+                            self.scheduleReset();
+                        }, 100);
+                    }, { passive: true });
+                });
+            },
+
+            setText: function(text) {
+                if (this.element && text !== this.currentText) {
+                    this.currentText = text;
+                    this.element.textContent = text;
+                }
+            },
+
+            cancelReset: function() {
+                if (this.resetTimeout) {
+                    clearTimeout(this.resetTimeout);
+                    this.resetTimeout = null;
+                }
+            },
+
+            scheduleReset: function() {
+                var self = this;
+                this.cancelReset();
+                this.resetTimeout = setTimeout(function() {
+                    self.reset();
+                }, 150);
+            },
+
+            setDragging: function(state) {
+                this.isDragging = state;
+                if (state) this.cancelReset();
+            },
+
+            setSection: function(section) {
+                if (this.section !== section) {
+                    this.section = section;
+                    if (!this.isDragging && !this.activeTouch) {
+                        this.reset();
+                    }
+                }
+            },
+
+            reset: function() {
+                var defaultText;
+                if (this.section === 'colab') {
+                    defaultText = 'COLLABS';
+                } else if (this.section === 'binding') {
+                    defaultText = 'BINDINGS';
+                } else {
+                    defaultText = 'SKIS';
+                }
+                this.setText(defaultText);
+            }
+        };
+
+        function initSkiScene() {
+            var container = document.querySelector('.hero-scene');
+            var triggers = document.querySelectorAll('.ski-trigger');
+            if (!container || !triggers.length) return;
+
+            var viewer = document.createElement('spline-viewer');
+            viewer.setAttribute('url', CONFIG.CLOUDFLARE_URL + '/scenes/hero-animation/scene.splinecode');
+            container.appendChild(viewer);
+
+            var app = null;
+            var objects = [];
+            var rotations = CONFIG.DEFAULT_ROTATIONS.slice();
+
+            // Auto-orbit state
+            var orbitPaused = false;
+            var orbitSpeedMultiplier = 1;
+            var orbitEaseStart = null;
+            var isSnappingBack = [false, false, false, false, false];
+
+            function initObjects() {
+                app = viewer._spline;
+                if (!app) {
+                    setTimeout(initObjects, 500);
+                    return;
+                }
+
+                var allObjects = (app.getAllObjects && app.getAllObjects()) || [];
+                PRODUCTS.forEach(function(product, i) {
+                    var obj = allObjects.find(function(o) { return o.uuid === product.uuid; });
+                    if (obj) {
+                        objects[i] = obj;
+                        if (obj.rotation) obj.rotation.y = CONFIG.DEFAULT_ROTATIONS[i] * Math.PI / 180;
+                    }
+                });
+
+                if (objects.filter(Boolean).length === CONFIG.SKI_COUNT) {
+                    setupInteraction();
+                    if (CONFIG.AUTO_ORBIT.ENABLED) {
+                        setTimeout(function() {
+                            orbitSpeedMultiplier = 0;
+                            orbitEaseStart = Date.now();
+                            requestAnimationFrame(autoOrbitLoop);
+                        }, CONFIG.AUTO_ORBIT.START_DELAY);
+                    }
+                }
+            }
+
+            function rotate(index, degrees) {
+                var obj = objects[index];
+                if (obj && obj.rotation) {
+                    obj.rotation.y = degrees * Math.PI / 180;
+                    if (app.renderer && app.renderer.render) {
+                        app.renderer.render(app.scene, app.camera);
+                    }
+                }
+            }
+
+            function animateToDefault(index) {
+                var start = rotations[index];
+                var target = CONFIG.DEFAULT_ROTATIONS[index];
+                var startTime = Date.now();
+                isSnappingBack[index] = true;
+
+                (function animate() {
+                    var progress = Math.min((Date.now() - startTime) / CONFIG.ANIMATION_DURATION, 1);
+                    var eased = 1 - Math.pow(1 - progress, 3);
+                    rotations[index] = start + (target - start) * eased;
+                    rotate(index, rotations[index]);
+                    if (progress < 1) {
+                        requestAnimationFrame(animate);
+                    } else {
+                        isSnappingBack[index] = false;
+                    }
+                })();
+            }
+
+            function autoOrbitLoop() {
+                if (!orbitPaused && app) {
+                    if (orbitEaseStart !== null) {
+                        var elapsed = Date.now() - orbitEaseStart;
+                        var progress = Math.min(elapsed / CONFIG.AUTO_ORBIT.EASE_DURATION, 1);
+                        orbitSpeedMultiplier = 1 - Math.pow(1 - progress, 3);
+                        if (progress >= 1) {
+                            orbitEaseStart = null;
+                            orbitSpeedMultiplier = 1;
+                        }
+                    }
+
+                    var speed = CONFIG.AUTO_ORBIT.SPEED * orbitSpeedMultiplier;
+                    var didRotate = false;
+
+                    for (var i = 0; i < CONFIG.SKI_COUNT; i++) {
+                        if (objects[i] && objects[i].rotation && !isSnappingBack[i]) {
+                            rotations[i] += speed;
+                            objects[i].rotation.y = rotations[i] * Math.PI / 180;
+                            didRotate = true;
+                        }
+                    }
+
+                    if (didRotate && app.renderer && app.renderer.render) {
+                        app.renderer.render(app.scene, app.camera);
+                    }
+                }
+
+                requestAnimationFrame(autoOrbitLoop);
+            }
+
+            function setupInteraction() {
+                var state = null;
+
+                triggers.forEach(function(trigger, i) {
+                    trigger.setAttribute('data-ski', i);
+
+                    function handleStart(e) {
+                        if (e.target.closest('[class*="cookie"]')) return;
+                        if (e.type !== 'touchstart') e.preventDefault();
+
+                        var isTouch = e.type === 'touchstart';
+                        var point = isTouch ? e.touches[0] : e;
+
+                        state = {
+                            index: i,
+                            startX: point.clientX,
+                            startY: point.clientY,
+                            startRotation: rotations[i],
+                            isTouch: isTouch,
+                            isDragging: false,
+                            touchId: isTouch ? point.identifier : null
+                        };
+
+                        orbitPaused = true;
+                        orbitEaseStart = null;
+                        textController.setDragging(true);
+                    }
+
+                    trigger.addEventListener('mousedown', handleStart, { capture: true, passive: false });
+                    trigger.addEventListener('touchstart', handleStart, { capture: true, passive: true });
+                });
+
+                window.addEventListener('mousemove', handleMove, { capture: true, passive: false });
+                window.addEventListener('mouseup', handleEnd, { capture: true, passive: false });
+                window.addEventListener('touchmove', handleMove, { capture: true, passive: false });
+                window.addEventListener('touchend', handleEnd, { capture: true, passive: false });
+
+                function handleMove(e) {
+                    if (!state) return;
+                    var point = state.isTouch
+                        ? Array.from(e.touches).find(function(t) { return t.identifier === state.touchId; })
+                        : e;
+                    if (!point) return;
+
+                    var dx = point.clientX - state.startX;
+                    var dy = point.clientY - state.startY;
+                    var distance = Math.sqrt(dx * dx + dy * dy);
+
+                    if (!state.isDragging && distance > CONFIG.DRAG_THRESHOLD) {
+                        state.isDragging = Math.abs(dx) > Math.abs(dy) * 1.5;
+                        if (!state.isDragging) {
+                            textController.setDragging(false);
+                            orbitSpeedMultiplier = 0;
+                            orbitEaseStart = Date.now();
+                            orbitPaused = false;
+                            state = null;
+                            return;
+                        }
+                    }
+
+                    if (state.isDragging) {
+                        e.preventDefault();
+                        var speed = state.isTouch ? CONFIG.ROTATION_SPEED.mobile : CONFIG.ROTATION_SPEED.desktop;
+                        rotations[state.index] = state.startRotation + dx * speed;
+                        rotate(state.index, rotations[state.index]);
+                    }
+                }
+
+                function handleEnd(e) {
+                    if (!state) return;
+                    textController.setDragging(false);
+
+                    orbitSpeedMultiplier = 0;
+                    orbitEaseStart = Date.now();
+                    orbitPaused = false;
+
+                    if (state.isDragging) {
+                        e.preventDefault();
+                        animateToDefault(state.index);
+                    }
+                    textController.scheduleReset();
+                    state = null;
+                }
+            }
+
+            setTimeout(initObjects, CONFIG.INIT_DELAY);
+        }
+
+        function setupSectionObservers() {
+            var skiWrapper = document.querySelector('.skis_div, .SKIS_DIV');
+            var colabWrapper = document.querySelector('.colab_div, .COLAB_DIV');
+            var bindingWrapper = document.querySelector('.binding_div, .BINDING_DIV');
+
+            var sections = [];
+            if (skiWrapper) sections.push({ el: skiWrapper, name: 'skis' });
+            if (colabWrapper) sections.push({ el: colabWrapper, name: 'colab' });
+            if (bindingWrapper) sections.push({ el: bindingWrapper, name: 'binding' });
+
+            if (sections.length === 0) return;
+
+            function updateActiveSection() {
+                var viewportHeight = window.innerHeight;
+                var viewportCenter = viewportHeight / 2;
+                var bestSection = null;
+                var bestScore = -Infinity;
+
+                sections.forEach(function(section) {
+                    var rect = section.el.getBoundingClientRect();
+
+                    if (rect.bottom < 0 || rect.top > viewportHeight) return;
+
+                    var visibleTop = Math.max(0, rect.top);
+                    var visibleBottom = Math.min(viewportHeight, rect.bottom);
+                    var visibleHeight = visibleBottom - visibleTop;
+
+                    var visibleCenter = visibleTop + (visibleHeight / 2);
+
+                    var centerDistance = Math.abs(visibleCenter - viewportCenter);
+                    var score = visibleHeight - (centerDistance * 0.5);
+
+                    if (score > bestScore) {
+                        bestScore = score;
+                        bestSection = section;
+                    }
+                });
+
+                if (bestSection && bestScore > 50) {
+                    textController.setSection(bestSection.name);
+                }
+            }
+
+            var scrollTimeout = null;
+            window.addEventListener('scroll', function() {
+                if (scrollTimeout) return;
+                scrollTimeout = setTimeout(function() {
+                    scrollTimeout = null;
+                    updateActiveSection();
+                }, 50);
+            }, { passive: true });
+
+            setTimeout(updateActiveSection, 100);
+        }
+
+        function init() {
+            textController.init();
+            initSkiScene();
+            setupSectionObservers();
+        }
+
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', init);
+        } else {
+            init();
+        }
+    }, 500);
+})();
+</script>
